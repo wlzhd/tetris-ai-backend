@@ -320,18 +320,41 @@ document.getElementById('btn-start').addEventListener('click', () => {
 
 // ⏱️ 혼자하기(스프린트) 버튼 클릭 핸들러
 document.getElementById('btn-solo').addEventListener('click', () => {
+    // 💡 [초핵심] 기존 방 코드(roomId)와 역할(myRole)이 있다면 변수에 백업해두고 리셋을 방지합니다!
+    const savedRoomId = roomId;
+    const savedMyRole = myRole;
+
+    // 보드판 상태는 깨끗하게 비우되, 룸 상태는 깨지는 걸 방지
     resetAllBoardStates();
+    
+    // 백업해둔 방 데이터 다시 복구! (코드가 사라지지 않는 치트키)
+    roomId = savedRoomId;
+    myRole = savedMyRole;
+    
     isSoloMode = true; 
     gameActive = true;
-    
     sprintLinesCleared = 0;
     sprintStartTime = performance.now(); 
     
+    // 상대방 화면은 연습모드 분위기 나게 반투명 처리
     document.getElementById('opp-section').style.opacity = "0.1";
     
+    // 연습용 블록 큐 생성 및 첫 블록 드롭
     myGame.nextQueue = [...generateSharedBag(), ...generateSharedBag()];
     myPlayerReset();
-    startSprintRealtimeTimer(); // 💡 실시간 타이머 가동!
+    startSprintRealtimeTimer(); 
+
+    // 🏠 상단 안내 메시지 처리
+    if (savedRoomId) {
+        // 만약 방이 만들어진 상태에서 혼자하기를 누른 거라면, 방 코드를 상단에 계속 띄워줍니다!
+        const pureNum = savedRoomId.replace("room_", "");
+        document.getElementById('status-msg').innerHTML = 
+            `🏠 유지 중인 방 코드: <span style="color: #f1c40f; font-size: 20px; font-weight: bold; background: #000; padding: 2px 8px; border-radius: 4px;">${pureNum}</span> (혼자 연습 중...)<br>` +
+            `<span style="color: #2ecc71; font-size: 12px; font-weight: bold;">상대방이 이 코드를 치고 들어오면 연습이 중단되고 대전이 시작됩니다!</span>`;
+    } else {
+        // 그냥 쌩으로 혼자하기를 눌렀을 때의 기본 문구
+        document.getElementById('status-msg').innerText = "⏱️ 연습 모드 가동 중...";
+    }
 });
 
 // 🔄 방에서 [다시시작] 버튼을 눌렀을 때 실행되는 재경기 요청 함수
@@ -382,9 +405,14 @@ socket.on('opponent_sync', (data) => {
 
 socket.on('status', (msg) => { if(!isSoloMode) document.getElementById('status-msg').innerText = msg; });
 socket.on('match_start', (data) => {
-    roomId = data.roomId; myRole = data.role;
+    // 🔥 [★초초초핵심] 시작 신호나 재경기 신호가 오면 무조건 기존 도화지부터 깨끗하게 닦습니다!
+    resetAllBoardStates();
+
+    roomId = data.roomId; 
+    myRole = data.role;
     document.getElementById('status-msg').innerText = "⚔️ 1VS1 실시간 매치 스타트!!";
     document.getElementById('opp-section').style.opacity = "1.0";
+    
     const serverBags = (myRole === 'p1') ? data.initialBags[0] : data.initialBags[1];
     myGame.nextQueue = serverBags.map(type => SHAPES[type].matrix.map(row => [...row]));
     gameActive = true;
@@ -635,13 +663,12 @@ function mainLoop(time = 0) {
     requestAnimationFrame(mainLoop);
 }
 
-// 1. 방 만들기 (방장)
+// 🏠 1. 방 만들기 (방장 - 새 방 개설 시 상대방 잔상 박멸 패치)
 function createCustomRoom() {
+    // 🔥 [★버그 2 해결] 내가 새 방을 파고 나갈 때, 이전 방에 있던 상대방의 화면 데이터 잔상을 강제로 공중분해시킵니다!
+    resetAllBoardStates();
+
     const randomRoomId = Math.floor(1000 + Math.random() * 9000).toString();
-    
-    // 🔥 [★초초초핵심] 기존 순정 코드들이 실시간 중계(sync_game)할 때 
-    // 전역 변수인 'roomId' 값을 그대로 가져다 씁니다! 
-    // 순정 서버 규격인 f"room_{room_id}" 형태로 온전하게 저장해 주어야 합니다.
     roomId = "room_" + randomRoomId; 
     myRole = 'p1'; 
     
