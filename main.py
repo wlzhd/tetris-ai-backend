@@ -212,13 +212,19 @@ async def handle_start_custom_match(sid, data):
     
     print(f"[대전 가동] 방장 {sid} 요청 접수 -> 방 {room_id} 배틀 런칭!")
     
-    # 유저님의 기존 멀티플레이어 매칭 성공 규칙('match_success')을 완벽 적용합니다!
-    # 백엔드가 'start' 신호를 방 전체에 뿌려줘야 프론트엔드가 캔버스를 활성화합니다.
-    await sio.emit('match_success', {
-        'room_id': room_id,
-        'status': 'start',
-        'player1': 'host',
-        'player2': 'guest'
+    # 공평한 게임 진행을 위한 7-Bag 랜덤 블록 가이드라인 사전 생성
+    def gen_bag():
+        bag = ['I', 'O', 'T', 'L', 'J', 'S', 'Z']
+        np.random.shuffle(bag)
+        return list(bag)
+    initial_bags = [gen_bag(), gen_bag()]
+    
+    # 📢 방 전체에 기존 aaa.js가 완벽하게 인지하는 'match_start' 규격 데이터를 보냅니다.
+    # 방장은 p1, 도전자는 p2 역할을 강제로 부여하여 게임판을 즉시 작동시킵니다.
+    await sio.emit('match_start', {
+        'roomId': room_id,
+        'role': 'p1',
+        'initialBags': initial_bags
     }, room=room_name)
 
 # 🔄 4. [다시시작] 버튼을 눌렀을 때 리턴매치 트리거 (★핵심 교정)
@@ -229,14 +235,20 @@ async def handle_request_rematch(sid, data):
     
     print(f"[재경기 요청] 방 {room_id} 에서 다시하기 버튼 클릭 감지")
     
-    # 📢 프론트엔드가 옛날 게임 데이터를 지우고 새로 그릴 수 있게 트리거 송출
+    # 브라우저가 화면을 리셋할 수 있도록 트리거 전송
     await sio.emit('rematch_triggered', {'status': 'restart'}, room=room_name)
     
-    # 새로운 테트리스 게임판 세션을 즉시 가동하도록 match_success 신호를 재송출합니다!
-    await sio.emit('match_success', {
-        'room_id': room_id,
-        'status': 'start',
-        'init': True
+    # 새 게임판 세션을 즉시 연동하기 위해 새 랜덤 블록셋을 담아 'match_start' 재송출!
+    def gen_bag():
+        bag = ['I', 'O', 'T', 'L', 'J', 'S', 'Z']
+        np.random.shuffle(bag)
+        return list(bag)
+    initial_bags = [gen_bag(), gen_bag()]
+    
+    await sio.emit('match_start', {
+        'roomId': room_id,
+        'role': 'p1',
+        'initialBags': initial_bags
     }, room=room_name)
 
 # ----------------------------------------------------------------------

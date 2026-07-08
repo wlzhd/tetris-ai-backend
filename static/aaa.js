@@ -345,13 +345,13 @@ if (document.getElementById('btn-restart')) {
 socket.on('rematch_triggered', function(data) {
     document.getElementById('status-msg').innerHTML = `⚔️ <span style="color: #e74c3c; font-weight:bold;">리턴 매치 성사!</span> 곧 다음 판이 시작됩니다!`;
     
-    // 🎮 기존에 사용하시던 게임판 초기화 및 카운트다운 함수를 호출합니다.
-    // (예: 기존 start_game 이벤트가 왔을 때 실행되던 내부 테트리스 시작 함수명)
-    if (typeof initMultiGame === 'function') {
-        initMultiGame(); 
-    } else if (typeof startGameLoop === 'function') {
-        startGameLoop();
-    }
+    // 🎮 기존 aaa.js에 있는 전체 보드 초기화 함수 실행
+    resetAllBoardStates();
+    
+    // 멀티플레이어 환경이므로 연습모드(isSoloMode) 해제 후 섹션 불빛 복구
+    isSoloMode = false;
+    document.getElementById('opp-section').style.opacity = "1.0";
+    gameActive = true;
 });
 
 socket.on('receive_attack', (data) => {
