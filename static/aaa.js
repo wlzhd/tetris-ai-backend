@@ -277,20 +277,21 @@ function resetAllBoardStates() {
     myGame.pendingAttacks = 0; myComboCount = -1;
     updateAttackGauge(myGame.gaugeElement, 0);
     
-    // 2. 🔥 [핵심] 상대방 보드판 데이터 및 기존 테트리스 조각 매트릭스까지 공중분해
+    // 2. 상대방 보드판 데이터 완전 청소
     oppGame.board = Array.from({length: 20}, () => Array(10).fill(0));
     oppGame.score = 0; 
     if (oppGame.scoreElement) oppGame.scoreElement.innerText = 0;
     oppGame.holdType = null; oppGame.nextQueue = []; 
-    
-    // 👾 이전 판 상대방 조각 잔상이 남아있지 않도록 완벽 거세
     oppGame.player = { pos: {x: 0, y: 0}, matrix: null, color: '' }; 
     oppGame.pendingAttacks = 0;
     updateAttackGauge(oppGame.gaugeElement, 0);
 
-    // 미니 캔버스들 싹 청소
+    // 미니 캔버스들 청소
     drawHold(myGame.holdCtx, myGame.holdCanvas, null);
     drawHold(oppGame.holdCtx, oppGame.holdCanvas, null);
+
+    // 🚫 [철저 방어] 원래 있던 roomId = null; 과 myRole = null; 구문을 의도적으로 제거했습니다!
+    // 이 함수가 실행되어도 방 코드 메모리는 철통같이 보호됩니다.
 }
 
 function updateNextPreview() {
@@ -318,16 +319,15 @@ document.getElementById('btn-start').addEventListener('click', () => {
     socket.emit('request_match'); 
 });
 
-// ⏱️ 혼자하기(스프린트) 버튼 클릭 핸들러
 document.getElementById('btn-solo').addEventListener('click', () => {
-    // 💡 [초핵심] 기존 방 코드(roomId)와 역할(myRole)이 있다면 변수에 백업해두고 리셋을 방지합니다!
+    // 💡 기존 방 정보 임시 백업
     const savedRoomId = roomId;
     const savedMyRole = myRole;
 
-    // 보드판 상태는 깨끗하게 비우되, 룸 상태는 깨지는 걸 방지
+    // 보드판 도화지 청소 (이제 내부에서 roomId를 지우지 않습니다!)
     resetAllBoardStates();
     
-    // 백업해둔 방 데이터 다시 복구! (코드가 사라지지 않는 치트키)
+    // 안전하게 방 데이터 유지
     roomId = savedRoomId;
     myRole = savedMyRole;
     
@@ -336,23 +336,20 @@ document.getElementById('btn-solo').addEventListener('click', () => {
     sprintLinesCleared = 0;
     sprintStartTime = performance.now(); 
     
-    // 상대방 화면은 연습모드 분위기 나게 반투명 처리
+    // 상대방 화면 반투명 처리
     document.getElementById('opp-section').style.opacity = "0.1";
     
-    // 연습용 블록 큐 생성 및 첫 블록 드롭
     myGame.nextQueue = [...generateSharedBag(), ...generateSharedBag()];
     myPlayerReset();
     startSprintRealtimeTimer(); 
 
-    // 🏠 상단 안내 메시지 처리
+    // 🏠 상단 안내 메시지에 방 코드 박제
     if (savedRoomId) {
-        // 만약 방이 만들어진 상태에서 혼자하기를 누른 거라면, 방 코드를 상단에 계속 띄워줍니다!
         const pureNum = savedRoomId.replace("room_", "");
         document.getElementById('status-msg').innerHTML = 
             `🏠 유지 중인 방 코드: <span style="color: #f1c40f; font-size: 20px; font-weight: bold; background: #000; padding: 2px 8px; border-radius: 4px;">${pureNum}</span> (혼자 연습 중...)<br>` +
-            `<span style="color: #2ecc71; font-size: 12px; font-weight: bold;">상대방이 이 코드를 치고 들어오면 연습이 중단되고 대전이 시작됩니다!</span>`;
+            `<span style="color: #2ecc71; font-size: 12px; font-weight: bold;">상대방이 이 코드를 치고 들어오면 대전 버튼이 다시 활성화됩니다!</span>`;
     } else {
-        // 그냥 쌩으로 혼자하기를 눌렀을 때의 기본 문구
         document.getElementById('status-msg').innerText = "⏱️ 연습 모드 가동 중...";
     }
 });
