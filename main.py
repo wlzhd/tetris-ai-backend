@@ -210,22 +210,21 @@ async def handle_start_custom_match(sid, data):
     room_id = data.get('room_id')
     room_name = f"room_{room_id}"
     
-    print(f"[대전 가동] 방장 {sid} 요청 접수 -> 방 {room_id} 배틀 런칭!")
-    
-    # 공평한 게임 진행을 위한 7-Bag 랜덤 블록 가이드라인 사전 생성
-    def gen_bag():
-        bag = ['I', 'O', 'T', 'L', 'J', 'S', 'Z']
-        np.random.shuffle(bag)
-        return list(bag)
-    initial_bags = [gen_bag(), gen_bag()]
-    
-    # 📢 방 전체에 기존 aaa.js가 완벽하게 인지하는 'match_start' 규격 데이터를 보냅니다.
-    # 방장은 p1, 도전자는 p2 역할을 강제로 부여하여 게임판을 즉시 작동시킵니다.
-    await sio.emit('match_start', {
-        'roomId': room_id,
-        'role': 'p1',
-        'initialBags': initial_bags
-    }, room=room_name)
+    if room_name in rooms:
+        p1 = rooms[room_name]['players'][0] # 방장 (소켓 ID)
+        p2 = rooms[room_name]['players'][1] # 도전자 (소켓 ID)
+        
+        # 공평한 7-Bag 랜덤 블록셋 생성
+        def gen_bag():
+            bag = ['I', 'O', 'T', 'L', 'J', 'S', 'Z']
+            np.random.shuffle(bag)
+            return list(bag)
+        initial_bags = [gen_bag(), gen_bag()]
+        
+        # 📢 [초핵심] 방장에게는 'p1' 역할을, 도전자에게는 'p2' 역할을 정확히 찢어서 발송합니다!
+        await sio.emit('match_start', {'roomId': room_name, 'role': 'p1', 'initialBags': initial_bags}, to=p1)
+        await sio.emit('match_start', {'roomId': room_name, 'role': 'p2', 'initialBags': initial_bags}, to=p2)
+        print(f"🚀 [배틀 시작] 커스텀 방 {room_id} -> p1:{p1} VS p2:{p2} 분리 완동!")
 
 # 🔄 4. [다시시작] 버튼을 눌렀을 때 리턴매치 트리거 (★핵심 교정)
 @sio.on('request_rematch')
@@ -233,23 +232,24 @@ async def handle_request_rematch(sid, data):
     room_id = data.get('room_id')
     room_name = f"room_{room_id}"
     
-    print(f"[재경기 요청] 방 {room_id} 에서 다시하기 버튼 클릭 감지")
-    
-    # 브라우저가 화면을 리셋할 수 있도록 트리거 전송
-    await sio.emit('rematch_triggered', {'status': 'restart'}, room=room_name)
-    
-    # 새 게임판 세션을 즉시 연동하기 위해 새 랜덤 블록셋을 담아 'match_start' 재송출!
-    def gen_bag():
-        bag = ['I', 'O', 'T', 'L', 'J', 'S', 'Z']
-        np.random.shuffle(bag)
-        return list(bag)
-    initial_bags = [gen_bag(), gen_bag()]
-    
-    await sio.emit('match_start', {
-        'roomId': room_id,
-        'role': 'p1',
-        'initialBags': initial_bags
-    }, room=room_name)
+    if room_name in rooms:
+        p1 = rooms[room_name]['players'][0]
+        p2 = rooms[room_name]['players'][1]
+        
+        # 화면 초기화 신호 송출
+        await sio.emit('rematch_triggered', {'status': 'restart'}, room=room_name)
+        
+        # 다음 판을 위한 신규 블록셋 생성
+        def gen_bag():
+            bag = ['I', 'O', 'T', 'L', 'J', 'S', 'Z']
+            np.random.shuffle(bag)
+            return list(bag)
+        initial_bags = [gen_bag(), gen_bag()]
+        
+        # 🔄 재경기 때도 방장(p1)과 도전자(p2) 역할을 칼같이 유지시켜 줍니다.
+        await sio.emit('match_start', {'roomId': room_name, 'role': 'p1', 'initialBags': initial_bags}, to=p1)
+        await sio.emit('match_start', {'roomId': room_name, 'role': 'p2', 'initialBags': initial_bags}, to=p2)
+        print(f"🔄 [리턴매치 가동] 방 {room_id} p1/p2 역할 분리 리셋 완료!")
 
 # ----------------------------------------------------------------------
 # 🚀 [가동부 환경 파싱 및 포트 트리거]
