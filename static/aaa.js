@@ -133,6 +133,9 @@ function myPlayerReset() {
             myGame.player.pos.y--;
             if (collide(myGame.board, myGame.player)) {
                 if (sprintTimerInterval) clearInterval(sprintTimerInterval); // 게임오버 시에도 타이머 스톱
+                
+                showControlButtonsAgain();
+
                 alert("💥 블록 소환 불가로 인한 GAME OVER 💥");
                 gameActive = false;
                 return;
@@ -666,13 +669,20 @@ let customRoomRole = null;
 // 1. 방 만들기 (방장)
 function createCustomRoom() {
     resetAllBoardStates();
+
     customRoomNum = Math.floor(1000 + Math.random() * 9000).toString();
     customRoomRole = 'p1'; 
+    
     roomId = "custom_room_" + customRoomNum; 
     myRole = 'p1';
+
+    // 💡 방을 만들었을 때는 모든 버튼이 정상 노출됩니다.
+    document.getElementById('btn-solo').style.display = "inline-block";
+    if (document.getElementById('btn-start')) document.getElementById('btn-start').style.display = "inline-block";
+
     document.getElementById('status-msg').innerHTML = 
         `🏠 생성된 방 코드: <span style="color: #f1c40f; font-size: 22px; font-weight: bold; background: #000; padding: 2px 8px; border-radius: 4px;">${customRoomNum}</span> (상대 대기 중...)<br>` +
-        `<span style="color: #ff9f43; font-size: 12px; font-weight: bold;">상대방에게 이 숫자를 알려주세요! 혼자하기(연습)를 하며 기다려도 코드는 유지됩니다!</span>`;
+        `<span style="color: #ff9f43; font-size: 12px; font-weight: bold;">상대방에게 코드를 알려주세요! 혼자하기(연습)를 눌러도 코드는 완벽히 유지됩니다.</span>`;
     
     socket.emit('create_custom_room', { room_id: customRoomNum });
 }
@@ -686,7 +696,6 @@ function joinCustomRoom() {
     
     customRoomNum = inputVal;
     customRoomRole = 'p2';
-    
     roomId = "custom_room_" + customRoomNum;
     myRole = 'p2';
     
@@ -725,6 +734,70 @@ socket.on('match_start_custom', function(data) {
     myGame.nextQueue = serverBags.map(type => SHAPES[type].matrix.map(row => [...row]));
     gameActive = true;
     myPlayerReset();
+});
+
+// 💥 5. [ match_start_custom ] 대전 시작 이벤트 (★인게임 진입 시 연습하기 버튼 완전 삭제)
+socket.on('match_start_custom', function(data) {
+    resetAllBoardStates();
+    
+    roomId = data.roomId;
+    myRole = data.role;
+    customRoomRole = data.role; 
+    
+    document.getElementById('status-msg').innerText = "⚔️ 1VS1 실시간 매치 스타트!!";
+    document.getElementById('opp-section').style.opacity = "1.0";
+
+    // 🚨 [요구사항 2] 게임이 본격적으로 가동되면 혼자하기(연습) 버튼을 화면에서 즉시 숨겨버립니다!
+    document.getElementById('btn-solo').style.display = "none";
+    if (document.getElementById('btn-start')) document.getElementById('btn-start').style.display = "none";
+    document.getElementById('room-join-area').style.display = "none"; // 방입장 창도 같이 숨겨 정갈하게 만듭니다.
+    
+    const serverBags = (myRole === 'p1') ? data.initialBags[0] : data.initialBags[1];
+    myGame.nextQueue = serverBags.map(type => SHAPES[type].matrix.map(row => [...row]));
+    gameActive = true;
+    myPlayerReset();
+});
+
+// 💀 6. 누군가 죽어서 GAME OVER가 뜨거나 판이 끝나면 버튼 원복 활성화 트리거 연동
+// (기존 aaa.js 내부에서 Game Over 경고창이 뜨는 모든 분기점에 아래 함수를 실행하도록 연동 처리합니다)
+function showControlButtonsAgain() {
+    // 🚨 [요구사항 2] 대전이 완전히 끝나거나 한 명이 KO 당하면 혼자하기 버튼이 다시 짜잔 활성화됩니다!
+    document.getElementById('btn-solo').style.style.display = "inline-block";
+    if (document.getElementById('btn-start')) document.getElementById('btn-start').style.display = "inline-block";
+    document.getElementById('room-join-area').style.display = "flex";
+}
+
+// 💡 7. 혼자하기(연습) 이벤트 재정립 (방 키 철통 방어막 장착)
+document.getElementById('btn-solo').addEventListener('click', () => {
+    // 기존 독립 방 주소 강제 스냅샷 백업
+    const backupNum = customRoomNum;
+    const backupRole = customRoomRole;
+
+    resetAllBoardStates();
+    
+    // 강제 주입 복구 (방 코드 절대 증발 불가)
+    customRoomNum = backupNum;
+    customRoomRole = backupRole;
+    if (backupNum) {
+        roomId = "custom_room_" + backupNum;
+        myRole = backupRole;
+    }
+
+    isSoloMode = true; 
+    gameActive = true;
+    sprintLinesCleared = 0;
+    sprintStartTime = performance.now(); 
+    
+    document.getElementById('opp-section').style.opacity = "0.1";
+    myGame.nextQueue = [...generateSharedBag(), ...generateSharedBag()];
+    myPlayerReset();
+    startSprintRealtimeTimer(); 
+
+    if (customRoomNum) {
+        document.getElementById('status-msg').innerHTML = 
+            `🏠 대기실 코드: <span style="color: #f1c40f; font-size: 20px; font-weight: bold; background: #000; padding: 2px 8px; border-radius: 4px;">${customRoomNum}</span> (혼자 연습 중...)<br>` +
+            `<span style="color: #2ecc71; font-size: 12px; font-weight: bold;">상대방이 이 코드를 치고 들어오면 연습이 정지되고 대전 버튼이 켜집니다!</span>`;
+    }
 });
 
 mainLoop();
