@@ -185,63 +185,59 @@ async def handle_ai_request(sid, data):
     best_x, best_rot, should_swap = predict_best_move_with_hold(board, current_piece, hold_piece, can_swap)
     await sio.emit("response_ai_decision", {"bestX": best_x, "bestRot": best_rot, "shouldSwap": should_swap}, to=sid)
 
-    # 🏠 방 만들기를 눌렀을 때 실행되는 서버 이벤트
+# 🏠 1. 커스텀 방 만들기 이벤트
 @sio.on('create_custom_room')
 async def handle_create_custom_room(sid, data):
     room_id = data.get('room_id')
     room_name = f"room_{room_id}"
     await sio.enter_room(sid, room_name)
-    print(f"[커스텀방 생성] 방장 {sid} -> 방 코드 {room_id}")
+    print(f"[방 개설] 방장 {sid} -> 방 코드 {room_id}")
 
-# ⚔️ 방 참가를 눌렀을 때 실행되는 서버 이벤트
+# ⚔️ 2. 커스텀 방 참가하기 이벤트
 @sio.on('join_custom_room')
 async def handle_join_custom_room(sid, data):
     room_id = data.get('room_id')
     room_name = f"room_{room_id}"
     await sio.enter_room(sid, room_name)
-    print(f"[커스텀방 참가] 도전자 {sid} -> 방 코드 {room_id}")
+    print(f"[방 참가] 도전자 {sid} -> 방 코드 {room_id}")
     
-    # 👥 방에 참가자가 왔음을 방에 있는 유저(방장 포함)들에게 알립니다!
+    # 두 유저가 연결되었음을 알림
     await sio.emit('opponent_joined', {'room_id': room_id}, room=room_name)
 
-# 🚀 방장이 [게임 시작하기] 버튼을 눌렀을 때의 최종 트리거
+# 🚀 3. 방장이 [대전 시작하기] 버튼을 눌렀을 때 (★핵심 교정)
 @sio.on('start_custom_match')
 async def handle_start_custom_match(sid, data):
     room_id = data.get('room_id')
     room_name = f"room_{room_id}"
     
-    print(f"[멀티 배틀 런칭] 방장 요청 접수 -> 방 코드 {room_id} 게임판 시작!")
+    print(f"[대전 가동] 방장 {sid} 요청 접수 -> 방 {room_id} 배틀 런칭!")
     
-    # 🎮 기존에 짜놓으신 실제 테트리스 멀티플레이어 시작 신호를 방 전체에 뿌립니다!
-    # (기존 match_request 성공 시 쏘던 클라이언트 이벤트명과 데이터를 그대로 맞춰주시면 됩니다.)
-    await sio.emit('start_game', {
+    # 유저님의 기존 멀티플레이어 매칭 성공 규칙('match_success')을 완벽 적용합니다!
+    # 백엔드가 'start' 신호를 방 전체에 뿌려줘야 프론트엔드가 캔버스를 활성화합니다.
+    await sio.emit('match_success', {
         'room_id': room_id,
-        'player1_status': 'ready',
-        'player2_status': 'ready'
+        'status': 'start',
+        'player1': 'host',
+        'player2': 'guest'
     }, room=room_name)
 
-# 🔄 상대방과 다시하기(재경기) 요청 핸들러
+# 🔄 4. [다시시작] 버튼을 눌렀을 때 리턴매치 트리거 (★핵심 교정)
 @sio.on('request_rematch')
 async def handle_request_rematch(sid, data):
     room_id = data.get('room_id')
-    role = data.get('role')
     room_name = f"room_{room_id}"
     
-    print(f"[리턴매치 요청] 방 {room_id}의 {role} ({sid}) 가 다시하기를 눌렀습니다.")
+    print(f"[재경기 요청] 방 {room_id} 에서 다시하기 버튼 클릭 감지")
     
-    # 📢 복잡한 수락 절차 없이, 한 명이라도 다시하기를 누르면 
-    # 즉시 방 전체에 "재경기 시작!" 신호를 쏩니다.
+    # 📢 프론트엔드가 옛날 게임 데이터를 지우고 새로 그릴 수 있게 트리거 송출
     await sio.emit('rematch_triggered', {'status': 'restart'}, room=room_name)
     
-    # 🎮 기존에 짜놓으신 실제 테트리스 멀티플레이어 시작 신호('start_game')를 
-    # 새 게임판 데이터와 함께 다시 한번 방 전체에 뿌려줍니다!
-    await sio.emit('start_game', {
+    # 새로운 테트리스 게임판 세션을 즉시 가동하도록 match_success 신호를 재송출합니다!
+    await sio.emit('match_success', {
         'room_id': room_id,
-        'player1_status': 'ready',
-        'player2_status': 'ready'
+        'status': 'start',
+        'init': True
     }, room=room_name)
-    
-    print(f"[재경기 가동] 방 {room_id} 의 리턴매치 배틀 신호가 정상 송출되었습니다.")
 
 # ----------------------------------------------------------------------
 # 🚀 [가동부 환경 파싱 및 포트 트리거]
