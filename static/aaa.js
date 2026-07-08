@@ -267,7 +267,9 @@ function sendGameSync() {
 }
 
 function resetAllBoardStates() {
-    if (sprintTimerInterval) clearInterval(sprintTimerInterval); // 기존 잔여 타이머가 있다면 삭제
+    if (sprintTimerInterval) clearInterval(sprintTimerInterval);
+    
+    // 1. 내 보드판 데이터 완전 청소
     myGame.board = Array.from({length: 20}, () => Array(10).fill(0));
     myGame.score = 0; 
     if (myGame.scoreElement) myGame.scoreElement.innerText = 0; 
@@ -275,12 +277,18 @@ function resetAllBoardStates() {
     myGame.pendingAttacks = 0; myComboCount = -1;
     updateAttackGauge(myGame.gaugeElement, 0);
     
+    // 2. 🔥 [핵심] 상대방 보드판 데이터 및 기존 테트리스 조각 매트릭스까지 공중분해
     oppGame.board = Array.from({length: 20}, () => Array(10).fill(0));
-    oppGame.score = 0; oppGame.scoreElement.innerText = 0;
-    oppGame.holdType = null; oppGame.nextQueue = []; oppGame.player.matrix = null;
+    oppGame.score = 0; 
+    if (oppGame.scoreElement) oppGame.scoreElement.innerText = 0;
+    oppGame.holdType = null; oppGame.nextQueue = []; 
+    
+    // 👾 이전 판 상대방 조각 잔상이 남아있지 않도록 완벽 거세
+    oppGame.player = { pos: {x: 0, y: 0}, matrix: null, color: '' }; 
     oppGame.pendingAttacks = 0;
     updateAttackGauge(oppGame.gaugeElement, 0);
 
+    // 미니 캔버스들 싹 청소
     drawHold(myGame.holdCtx, myGame.holdCanvas, null);
     drawHold(oppGame.holdCtx, oppGame.holdCanvas, null);
 }
