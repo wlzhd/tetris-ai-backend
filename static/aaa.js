@@ -618,15 +618,15 @@ function mainLoop(time = 0) {
     requestAnimationFrame(mainLoop);
 }
 
-// 🏠 1. 방 만들기 (방장)
 function createCustomRoom() {
     const randomRoomId = Math.floor(1000 + Math.random() * 9000).toString();
     roomId = randomRoomId; 
     myRole = 'player1'; 
     
-    // 방장 대기 화면 표기
+    // 안내 텍스트 가독성 확보를 위해 높이 조절 및 강조
     document.getElementById('status-msg').innerHTML = 
-        `🏠 방 코드: <span style="color: #f1c40f; font-size: 20px; font-weight: bold;">${roomId}</span> (대기 중...)<br><span style="color: #aaa; font-size: 12px;">상대방이 접속하면 여기에 [시작] 버튼이 활성화됩니다.</span>`;
+        `🏠 생성된 방 코드: <span style="color: #f1c40f; font-size: 22px; font-weight: bold; background: #000; padding: 2px 8px; border-radius: 4px;">${roomId}</span> (상대 대기 중...)<br>` +
+        `<span style="color: #ff9f43; font-size: 12px; font-weight: bold;">도전자가 접속하면 자동으로 여기에 시작 버튼이 활성화됩니다!</span>`;
     
     socket.emit('create_custom_room', { room_id: roomId });
 }
@@ -639,24 +639,21 @@ function joinCustomRoom() {
     roomId = inputVal;
     myRole = 'player2'; 
     
-    document.getElementById('status-msg').innerText = `방 ${roomId}번에 참가 요청 중...`;
+    document.getElementById('status-msg').innerHTML = `⏳ <span style="color: #3498db; font-weight:bold;">[방 ${roomId}번]</span>에 참가 요청을 보냈습니다...`;
     socket.emit('join_custom_room', { room_id: roomId });
 }
 
-// 🚀 3. 상대가 들어왔을 때 방장 화면에 [시작] 버튼을 주입해주는 소켓 이벤트 수신부
 socket.on('opponent_joined', function(data) {
     if (myRole === 'player1') {
-        // 방장에게 시작 권한 버튼을 띄워줍니다!
         document.getElementById('status-msg').innerHTML = 
-            `👥 상대방이 입장했습니다! 아래 버튼을 눌러 대전을 시작하세요.<br><br>` +
-            `<button class="menu-btn" onclick="startCustomMatch()" style="background: #e74c3c; border-color: #c0392b; font-size: 15px; padding: 10px 25px; animation: pulse 1s infinite;">🚀 게임 시작하기!</button>`;
-    } else {
-        // 도전자 화면
-        document.getElementById('status-msg').innerText = `방장 플레이어의 게임 시작을 기다리는 중입니다... ⏳`;
+            `👥 <span style="color: #2ecc71; font-weight:bold;">도전자가 입장했습니다!</span> 대전을 시작할 준비가 되었습니다.<br><br>` +
+            `<button class="menu-btn" onclick="startCustomMatch()" style="background: #e74c3c; border-color: #c0392b; font-size: 16px; padding: 12px 30px; font-weight: bold; color: white; cursor: pointer; border-radius: 8px; box-shadow: 0 0 15px rgba(231,76,60,0.6);">🚀 대전 시작하기 (클릭!)</button>`;
+    } else if (myRole === 'player2') {
+        document.getElementById('status-msg').innerHTML = `🤝 <span style="color: #f1c40f; font-weight:bold;">방에 정상 입장했습니다!</span><br>방장 플레이어가 게임을 시작하기를 기다리는 중... ⏳`;
     }
 });
 
-// 🎮 4. 방장이 실제 게임 시작 버튼을 눌렀을 때 백엔드로 신호 쏘기
+// 🎮 4. 방장이 최종 시작 신호 날리기
 function startCustomMatch() {
     socket.emit('start_custom_match', { room_id: roomId });
 }
