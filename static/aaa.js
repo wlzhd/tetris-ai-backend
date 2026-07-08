@@ -617,4 +617,40 @@ function mainLoop(time = 0) {
 
     requestAnimationFrame(mainLoop);
 }
+
+// 🏠 1. 새로운 커스텀 방 만들기 함수
+function createCustomRoom() {
+    // 4자리 숫자로 랜덤 방 코드 생성 (예: 4821)
+    const randomRoomId = Math.floor(1000 + Math.random() * 9000).toString();
+    
+    // 글로벌 변수 roomId 설정 (aaa.js 상단에 이미 선언되어 있는 변수 활용)
+    roomId = randomRoomId; 
+    myRole = 'player1'; // 방을 만든 사람이 선제 공격권을 가진 플레이어1이 됩니다.
+    
+    // 화면 메시지 변경
+    document.getElementById('status-msg').innerHTML = 
+        `🏠 방이 생성되었습니다! 방 코드: <span style="color: #f1c40f; font-size: 18px;">${roomId}</span><br><span style="color: #bbb; font-size: 12px;">상대방에게 코드를 공유하고 기다려주세요...</span>`;
+    
+    // 파이썬 백엔드 서버로 방 생성 요청 전송
+    // (서버 main.py에 이 이벤트를 처리하는 코드를 연동합니다)
+    socket.emit('create_custom_room', { room_id: roomId });
+}
+
+// ⚔️ 2. 기존 방 코드로 참가하기 함수
+function joinCustomRoom() {
+    const inputVal = document.getElementById('input-room-id').value.trim();
+    
+    if (!inputVal) {
+        alert("방 코드를 입력해주세요!");
+        return;
+    }
+    
+    roomId = inputVal;
+    myRole = 'player2'; // 참가하는 사람은 플레이어2가 됩니다.
+    
+    document.getElementById('status-msg').innerText = `접속 중... 방 코드: ${roomId}`;
+    
+    // 파이썬 백엔드 서버로 참가 요청 전송
+    socket.emit('join_custom_room', { room_id: roomId });
+}
 mainLoop();
