@@ -660,20 +660,21 @@ function mainLoop(time = 0) {
     requestAnimationFrame(mainLoop);
 }
 
-// 🏠 1. 방 만들기 (방장 - 새 방 개설 시 상대방 잔상 박멸 패치)
-function createCustomRoom() {
-    // 🔥 [★버그 2 해결] 내가 새 방을 파고 나갈 때, 이전 방에 있던 상대방의 화면 데이터 잔상을 강제로 공중분해시킵니다!
-    resetAllBoardStates();
+let customRoomNum = null;   // 💡 빠른매칭/연습모드와 절대 꼬이지 않는 독립된 방 번호 메모리
+let customRoomRole = null;
 
-    const randomRoomId = Math.floor(1000 + Math.random() * 9000).toString();
-    roomId = "room_" + randomRoomId; 
-    myRole = 'p1'; 
-    
+// 1. 방 만들기 (방장)
+function createCustomRoom() {
+    resetAllBoardStates();
+    customRoomNum = Math.floor(1000 + Math.random() * 9000).toString();
+    customRoomRole = 'p1'; 
+    roomId = "custom_room_" + customRoomNum; 
+    myRole = 'p1';
     document.getElementById('status-msg').innerHTML = 
-        `🏠 생성된 방 코드: <span style="color: #f1c40f; font-size: 22px; font-weight: bold; background: #000; padding: 2px 8px; border-radius: 4px;">${randomRoomId}</span> (상대 대기 중...)<br>` +
-        `<span style="color: #ff9f43; font-size: 12px; font-weight: bold;">상대방에게 [${randomRoomId}] 숫자를 알려주고 입장하게 하세요!</span>`;
+        `🏠 생성된 방 코드: <span style="color: #f1c40f; font-size: 22px; font-weight: bold; background: #000; padding: 2px 8px; border-radius: 4px;">${customRoomNum}</span> (상대 대기 중...)<br>` +
+        `<span style="color: #ff9f43; font-size: 12px; font-weight: bold;">상대방에게 이 숫자를 알려주세요! 혼자하기(연습)를 하며 기다려도 코드는 유지됩니다!</span>`;
     
-    socket.emit('create_custom_room', { room_id: randomRoomId });
+    socket.emit('create_custom_room', { room_id: customRoomNum });
 }
 
 // 2. 방 참가하기 (도전자)
@@ -681,9 +682,13 @@ function joinCustomRoom() {
     const inputVal = document.getElementById('input-room-id').value.trim();
     if (!inputVal) { alert("방 코드를 입력해주세요!"); return; }
     
-    // 🔥 여기도 마찬가지로 전역 변수 'roomId'에 서버 룸 이름을 완벽 매칭합니다.
-    roomId = "room_" + inputVal; 
-    myRole = 'p2'; 
+    resetAllBoardStates();
+    
+    customRoomNum = inputVal;
+    customRoomRole = 'p2';
+    
+    roomId = "custom_room_" + customRoomNum;
+    myRole = 'p2';
     
     document.getElementById('status-msg').innerHTML = `⏳ <span style="color: #3498db; font-weight:bold;">[방 ${inputVal}번]</span>에 참가 요청을 보냈습니다...`;
     socket.emit('join_custom_room', { room_id: inputVal });
@@ -691,17 +696,35 @@ function joinCustomRoom() {
 
 // 3. 동일한 방에 두 사람이 모였을 때 트리거
 socket.on('opponent_joined', function(data) {
-    if (myRole === 'p1') {
+    if (customRoomRole === 'p1') {
         document.getElementById('status-msg').innerHTML = 
             `👥 <span style="color: #2ecc71; font-weight:bold;">도전자가 입장했습니다!</span> 대전을 시작할 준비가 되었습니다.<br><br>` +
             `<button class="menu-btn" onclick="startCustomMatch()" style="background: #e74c3c; border-color: #c0392b; font-size: 16px; padding: 12px 30px; font-weight: bold; color: white; cursor: pointer; border-radius: 8px; box-shadow: 0 0 15px rgba(231,76,60,0.6);">🚀 대전 시작하기 (클릭!)</button>`;
-    } else if (myRole === 'p2') {
+    } else if (customRoomRole === 'p2') {
         document.getElementById('status-msg').innerHTML = `🤝 <span style="color: #f1c40f; font-weight:bold;">방에 정상 입장했습니다!</span><br>방장 플레이어가 게임을 시작하기를 기다리는 중... ⏳`;
     }
 });
 
-// 🎮 4. 방장이 [대전 시작하기] 버튼을 눌렀을 때 백엔드로 신호 전송
 function startCustomMatch() {
-    socket.emit('start_custom_match', { room_id: roomId });
+    if (!customRoomNum) return;
+    socket.emit('start_custom_match', { room_id: customRoomNum });
 }
+
+// 💡 5. [ match_start ] 이벤트 수신부 보완 (서버에서 들어오는 변수 처리 안정화)
+socket.on('match_start_custom', function(data) {
+    resetAllBoardStates();
+    
+    roomId = data.roomId;
+    myRole = data.role;
+    customRoomRole = data.role; // 싱크 동기화 복구
+    
+    document.getElementById('status-msg').innerText = "⚔️ 1VS1 실시간 매치 스타트!!";
+    document.getElementById('opp-section').style.opacity = "1.0";
+    
+    const serverBags = (myRole === 'p1') ? data.initialBags[0] : data.initialBags[1];
+    myGame.nextQueue = serverBags.map(type => SHAPES[type].matrix.map(row => [...row]));
+    gameActive = true;
+    myPlayerReset();
+});
+
 mainLoop();
