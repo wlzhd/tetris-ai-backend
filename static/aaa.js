@@ -133,7 +133,7 @@ function myPlayerReset() {
             myGame.player.pos.y--;
             if (collide(myGame.board, myGame.player)) {
                 if (sprintTimerInterval) clearInterval(sprintTimerInterval); // 게임오버 시에도 타이머 스톱
-                
+
                 showControlButtonsAgain();
 
                 alert("💥 블록 소환 불가로 인한 GAME OVER 💥");
@@ -555,6 +555,10 @@ function applyPendingAttacks() {
     }
     if (displacedRows.some(row => row.some(val => val !== 0))) {
         if (sprintTimerInterval) clearInterval(sprintTimerInterval);
+        
+        // 🚨여기에 한 줄을 추가하여 버튼들을 다시 부활시켜 줍니다!
+        showControlButtonsAgain();
+
         alert("💥 쓰레기 블록 폭격으로 인한 GAME OVER 💥");
         gameActive = false; return;
     }
@@ -673,16 +677,18 @@ function createCustomRoom() {
     customRoomNum = Math.floor(1000 + Math.random() * 9000).toString();
     customRoomRole = 'p1'; 
     
-    roomId = "custom_room_" + customRoomNum; 
-    myRole = 'p1';
+    // 🚫 일반 빠른매칭 변수를 오염시키지 않기 위해 철저히 분리
+    roomId = null; 
+    myRole = null;
 
-    // 💡 방을 만들었을 때는 모든 버튼이 정상 노출됩니다.
+    // 💡 방을 만들었을 때는 모든 제어 버튼이 정상 노출됩니다.
     document.getElementById('btn-solo').style.display = "inline-block";
     if (document.getElementById('btn-start')) document.getElementById('btn-start').style.display = "inline-block";
+    document.getElementById('room-join-area').style.display = "flex";
 
     document.getElementById('status-msg').innerHTML = 
         `🏠 생성된 방 코드: <span style="color: #f1c40f; font-size: 22px; font-weight: bold; background: #000; padding: 2px 8px; border-radius: 4px;">${customRoomNum}</span> (상대 대기 중...)<br>` +
-        `<span style="color: #ff9f43; font-size: 12px; font-weight: bold;">상대방에게 코드를 알려주세요! 혼자하기(연습)를 눌러도 코드는 완벽히 유지됩니다.</span>`;
+        `<span style="color: #ff9f43; font-size: 12px; font-weight: bold;">상대방에게 코드를 알려주세요! 혼자하기(연습)를 하며 키보드를 마구 눌러도 코드는 절대 안 사라집니다!</span>`;
     
     socket.emit('create_custom_room', { room_id: customRoomNum });
 }
@@ -696,8 +702,8 @@ function joinCustomRoom() {
     
     customRoomNum = inputVal;
     customRoomRole = 'p2';
-    roomId = "custom_room_" + customRoomNum;
-    myRole = 'p2';
+    roomId = null;
+    myRole = null;
     
     document.getElementById('status-msg').innerHTML = `⏳ <span style="color: #3498db; font-weight:bold;">[방 ${inputVal}번]</span>에 참가 요청을 보냈습니다...`;
     socket.emit('join_custom_room', { room_id: inputVal });
@@ -714,21 +720,29 @@ socket.on('opponent_joined', function(data) {
     }
 });
 
+// 4. 방장이 [대전 시작하기] 버튼을 눌렀을 때 백엔드로 신호 전송
 function startCustomMatch() {
     if (!customRoomNum) return;
     socket.emit('start_custom_match', { room_id: customRoomNum });
 }
 
-// 💡 5. [ match_start ] 이벤트 수신부 보완 (서버에서 들어오는 변수 처리 안정화)
+// 💥 5. [ match_start_custom ] 커스텀 매치 가동 (★인게임 진입 시 제어 버튼들 완전 삭제)
 socket.on('match_start_custom', function(data) {
     resetAllBoardStates();
     
+    // 게임 배틀 세션이 시작되는 순간에만 공용 룸인자 매핑 가동!
     roomId = data.roomId;
     myRole = data.role;
-    customRoomRole = data.role; // 싱크 동기화 복구
+    customRoomRole = data.role; 
+    isSoloMode = false; // 대전이므로 연습 모드 강제 해제
     
     document.getElementById('status-msg').innerText = "⚔️ 1VS1 실시간 매치 스타트!!";
     document.getElementById('opp-section').style.opacity = "1.0";
+
+    // 🚨 [요구사항 2] 인게임 상태가 되면 혼자하기, 빠른매칭 버튼 및 방입장 창을 통째로 숨겨버립니다!
+    document.getElementById('btn-solo').style.display = "none";
+    if (document.getElementById('btn-start')) document.getElementById('btn-start').style.display = "none";
+    document.getElementById('room-join-area').style.display = "none"; 
     
     const serverBags = (myRole === 'p1') ? data.initialBags[0] : data.initialBags[1];
     myGame.nextQueue = serverBags.map(type => SHAPES[type].matrix.map(row => [...row]));
@@ -758,30 +772,31 @@ socket.on('match_start_custom', function(data) {
     myPlayerReset();
 });
 
-// 💀 6. 누군가 죽어서 GAME OVER가 뜨거나 판이 끝나면 버튼 원복 활성화 트리거 연동
-// (기존 aaa.js 내부에서 Game Over 경고창이 뜨는 모든 분기점에 아래 함수를 실행하도록 연동 처리합니다)
+// 💀 6. 대전이 완전히 끝나서 한 명이 죽으면 버튼을 다시 활성화해주는 함수
 function showControlButtonsAgain() {
-    // 🚨 [요구사항 2] 대전이 완전히 끝나거나 한 명이 KO 당하면 혼자하기 버튼이 다시 짜잔 활성화됩니다!
-    document.getElementById('btn-solo').style.style.display = "inline-block";
+    // 🚨 [요구사항 2] 대전 종료(GAME OVER) 시 혼자하기 및 제어판 UI 원상복구 활성화!
+    document.getElementById('btn-solo').style.display = "inline-block";
     if (document.getElementById('btn-start')) document.getElementById('btn-start').style.display = "inline-block";
     document.getElementById('room-join-area').style.display = "flex";
 }
 
-// 💡 7. 혼자하기(연습) 이벤트 재정립 (방 키 철통 방어막 장착)
+// 💡 7. 혼자하기(연습) 버튼 전용 독립 이벤트 리스너 (★오염 방지 완벽 방어막 버전)
 document.getElementById('btn-solo').addEventListener('click', () => {
-    // 기존 독립 방 주소 강제 스냅샷 백업
+    // 1. 현재 유지 중인 독립 방 번호 백업
     const backupNum = customRoomNum;
     const backupRole = customRoomRole;
 
+    // 2. 보드판 캔버스 완벽 청소
     resetAllBoardStates();
     
-    // 강제 주입 복구 (방 코드 절대 증발 불가)
+    // 3. 백업 데이터 복구
     customRoomNum = backupNum;
     customRoomRole = backupRole;
-    if (backupNum) {
-        roomId = "custom_room_" + backupNum;
-        myRole = backupRole;
-    }
+
+    // 🛡️ [초초초핵심 방어막] 혼자 연습할 때 키보드를 눌러도 sync_game 신호가 
+    // 서버로 날아가 룸을 파괴하지 않도록 roomId를 철저히 null로 고정 유지합니다!
+    roomId = null;
+    myRole = null;
 
     isSoloMode = true; 
     gameActive = true;
@@ -793,9 +808,10 @@ document.getElementById('btn-solo').addEventListener('click', () => {
     myPlayerReset();
     startSprintRealtimeTimer(); 
 
-    if (customRoomNum) {
+    // 🏠 상단 바에 방 코드 유지 표기
+    if (backupNum) {
         document.getElementById('status-msg').innerHTML = 
-            `🏠 대기실 코드: <span style="color: #f1c40f; font-size: 20px; font-weight: bold; background: #000; padding: 2px 8px; border-radius: 4px;">${customRoomNum}</span> (혼자 연습 중...)<br>` +
+            `🏠 유지 중인 방 코드: <span style="color: #f1c40f; font-size: 20px; font-weight: bold; background: #000; padding: 2px 8px; border-radius: 4px;">${backupNum}</span> (혼자 연습 중...)<br>` +
             `<span style="color: #2ecc71; font-size: 12px; font-weight: bold;">상대방이 이 코드를 치고 들어오면 연습이 정지되고 대전 버튼이 켜집니다!</span>`;
     }
 });

@@ -245,8 +245,8 @@ async def handle_start_custom_match(sid, data):
 # 🔄 4. [다시시작] 버튼을 눌렀을 때 리턴매치 트리거 (★핵심 교정)
 @sio.on('request_rematch')
 async def handle_request_rematch(sid, data):
-    room_id = data.get('room_id')
-    room_name = f"room_{room_id}"
+    room_id = str(data.get('room_id')).strip()
+    room_name = f"custom_room_{room_id}"
     
     if room_name in rooms:
         p1 = rooms[room_name]['players'][0]
@@ -262,10 +262,10 @@ async def handle_request_rematch(sid, data):
             return list(bag)
         initial_bags = [gen_bag(), gen_bag()]
         
-        # 🔄 재경기 때도 방장(p1)과 도전자(p2) 역할을 칼같이 유지시켜 줍니다.
-        await sio.emit('match_start', {'roomId': room_name, 'role': 'p1', 'initialBags': initial_bags}, to=p1)
-        await sio.emit('match_start', {'roomId': room_name, 'role': 'p2', 'initialBags': initial_bags}, to=p2)
-        print(f"🔄 [리턴매치 가동] 방 {room_id} p1/p2 역할 분리 리셋 완료!")
+        # 📢 리턴매치 시작 시 전용 커스텀 매치 스타트 신호 송출로 버튼 숨김 레이어 작동!!
+        await sio.emit('match_start_custom', {'roomId': room_name, 'role': 'p1', 'initialBags': initial_bags}, to=p1)
+        await sio.emit('match_start_custom', {'roomId': room_name, 'role': 'p2', 'initialBags': initial_bags}, to=p2)
+        print(f"🔄 [리턴매치 가동] 독립 세션 {room_name} 깨끗하게 초기화 후 재가동 완료!")
 
 # ----------------------------------------------------------------------
 # 🚀 [가동부 환경 파싱 및 포트 트리거]
