@@ -627,43 +627,52 @@ function mainLoop(time = 0) {
     requestAnimationFrame(mainLoop);
 }
 
+// 1. 방 만들기 (방장)
 function createCustomRoom() {
     const randomRoomId = Math.floor(1000 + Math.random() * 9000).toString();
-    roomId = randomRoomId; 
-    myRole = 'player1'; 
     
-    // 안내 텍스트 가독성 확보를 위해 높이 조절 및 강조
+    // 🔥 [★초초초핵심] 기존 순정 코드들이 실시간 중계(sync_game)할 때 
+    // 전역 변수인 'roomId' 값을 그대로 가져다 씁니다! 
+    // 순정 서버 규격인 f"room_{room_id}" 형태로 온전하게 저장해 주어야 합니다.
+    roomId = "room_" + randomRoomId; 
+    myRole = 'p1'; 
+    
     document.getElementById('status-msg').innerHTML = 
-        `🏠 생성된 방 코드: <span style="color: #f1c40f; font-size: 22px; font-weight: bold; background: #000; padding: 2px 8px; border-radius: 4px;">${roomId}</span> (상대 대기 중...)<br>` +
-        `<span style="color: #ff9f43; font-size: 12px; font-weight: bold;">도전자가 접속하면 자동으로 여기에 시작 버튼이 활성화됩니다!</span>`;
+        `🏠 생성된 방 코드: <span style="color: #f1c40f; font-size: 22px; font-weight: bold; background: #000; padding: 2px 8px; border-radius: 4px;">${randomRoomId}</span> (상대 대기 중...)<br>` +
+        `<span style="color: #ff9f43; font-size: 12px; font-weight: bold;">상대방에게 [${randomRoomId}] 숫자를 알려주고 입장하게 하세요!</span>`;
     
-    socket.emit('create_custom_room', { room_id: roomId });
+    socket.emit('create_custom_room', { room_id: randomRoomId });
 }
 
-// ⚔️ 2. 방 참가하기 (도전자)
+// 2. 방 참가하기 (도전자)
 function joinCustomRoom() {
     const inputVal = document.getElementById('input-room-id').value.trim();
     if (!inputVal) { alert("방 코드를 입력해주세요!"); return; }
     
-    roomId = inputVal;
-    myRole = 'player2'; 
+    // 🔥 여기도 마찬가지로 전역 변수 'roomId'에 서버 룸 이름을 완벽 매칭합니다.
+    roomId = "room_" + inputVal; 
+    myRole = 'p2'; 
     
-    document.getElementById('status-msg').innerHTML = `⏳ <span style="color: #3498db; font-weight:bold;">[방 ${roomId}번]</span>에 참가 요청을 보냈습니다...`;
-    socket.emit('join_custom_room', { room_id: roomId });
+    document.getElementById('status-msg').innerHTML = `⏳ <span style="color: #3498db; font-weight:bold;">[방 ${inputVal}번]</span>에 참가 요청을 보냈습니다...`;
+    socket.emit('join_custom_room', { room_id: inputVal });
 }
 
+// 3. 동일한 방에 두 사람이 모였을 때 트리거
 socket.on('opponent_joined', function(data) {
-    if (myRole === 'player1') {
+    if (myRole === 'p1') {
         document.getElementById('status-msg').innerHTML = 
             `👥 <span style="color: #2ecc71; font-weight:bold;">도전자가 입장했습니다!</span> 대전을 시작할 준비가 되었습니다.<br><br>` +
             `<button class="menu-btn" onclick="startCustomMatch()" style="background: #e74c3c; border-color: #c0392b; font-size: 16px; padding: 12px 30px; font-weight: bold; color: white; cursor: pointer; border-radius: 8px; box-shadow: 0 0 15px rgba(231,76,60,0.6);">🚀 대전 시작하기 (클릭!)</button>`;
-    } else if (myRole === 'player2') {
+    } else if (myRole === 'p2') {
         document.getElementById('status-msg').innerHTML = `🤝 <span style="color: #f1c40f; font-weight:bold;">방에 정상 입장했습니다!</span><br>방장 플레이어가 게임을 시작하기를 기다리는 중... ⏳`;
     }
 });
 
-// 🎮 4. 방장이 최종 시작 신호 날리기
+// 4. 방장이 [대전 시작하기] 버튼을 눌렀을 때 백엔드로 신호 전송
 function startCustomMatch() {
-    socket.emit('start_custom_match', { room_id: roomId });
+    if (!roomId) return;
+    // 전역 변수 roomId에 들어있는 "room_1234" 에서 숫자만 추출해서 서버로 토스합니다.
+    const pureNumberId = roomId.replace("room_", "");
+    socket.emit('start_custom_match', { room_id: pureNumberId });
 }
 mainLoop();
