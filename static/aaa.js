@@ -1,6 +1,7 @@
 // aaa.js
 // const socket = io("http://localhost:3000");
 // const socket = io("http://192.168.0.40:3000");
+console.log(window.location.origin);
 const socket = io(window.location.origin);
 
 let roomId = null;
