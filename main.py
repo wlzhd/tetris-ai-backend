@@ -189,29 +189,36 @@ async def handle_ai_request(sid, data):
 @sio.on('create_custom_room')
 async def handle_create_custom_room(sid, data):
     room_id = data.get('room_id')
-    # 소켓 엔진에게 이 유저(sid)를 해당 방 코드 이름의 가상 룸에 집어넣으라고 명령합니다.
-    await sio.enter_room(sid, f"room_{room_id}")
-    print(f"[방 개설] 유저 {sid} 가 방 {room_id} 를 만들었습니다.")
+    room_name = f"room_{room_id}"
+    await sio.enter_room(sid, room_name)
+    print(f"[커스텀방 생성] 방장 {sid} -> 방 코드 {room_id}")
 
 # ⚔️ 방 참가를 눌렀을 때 실행되는 서버 이벤트
 @sio.on('join_custom_room')
 async def handle_join_custom_room(sid, data):
     room_id = data.get('room_id')
     room_name = f"room_{room_id}"
-    
-    # 해당 방에 입장
     await sio.enter_room(sid, room_name)
-    print(f"[방 참가] 유저 {sid} 가 방 {room_id} 에 참가했습니다.")
+    print(f"[커스텀방 참가] 도전자 {sid} -> 방 코드 {room_id}")
     
-    # 🎮 두 명이 모였으므로 게임 시작 신호를 방 전체에 쏩니다!
-    # 기존에 만들어두신 멀티플레이 게임 시작 이벤트 이름(예: start_game 등)에 맞춰 데이터를 전송합니다.
+    # 👥 방에 참가자가 왔음을 방에 있는 유저(방장 포함)들에게 알립니다!
+    await sio.emit('opponent_joined', {'room_id': room_id}, room=room_name)
+
+# 🚀 방장이 [게임 시작하기] 버튼을 눌렀을 때의 최종 트리거
+@sio.on('start_custom_match')
+async def handle_start_custom_match(sid, data):
+    room_id = data.get('room_id')
+    room_name = f"room_{room_id}"
+    
+    print(f"[멀티 배틀 런칭] 방장 요청 접수 -> 방 코드 {room_id} 게임판 시작!")
+    
+    # 🎮 기존에 짜놓으신 실제 테트리스 멀티플레이어 시작 신호를 방 전체에 뿌립니다!
+    # (기존 match_request 성공 시 쏘던 클라이언트 이벤트명과 데이터를 그대로 맞춰주시면 됩니다.)
     await sio.emit('start_game', {
         'room_id': room_id,
         'player1_status': 'ready',
         'player2_status': 'ready'
     }, room=room_name)
-    
-    print(f"[게임 시작] 방 {room_id} 의 1대1 대전이 매칭 완료되어 가동됩니다!")
 
 # ----------------------------------------------------------------------
 # 🚀 [가동부 환경 파싱 및 포트 트리거]
