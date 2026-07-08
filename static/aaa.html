@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>ONLINE TETRIS WORLD</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        /* 🎨 글로벌 레이아웃 설정 */
+        body {
+            background-color: #1a1a1a; color: #ffffff; font-family: 'Malgun Gothic', sans-serif;
+            margin: 0; padding: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+        }
+
+        /* 👑 상단 통합 네비게이션 헤더 */
+        #global-header {
+            width: 100%; background: #2c3e50; border-bottom: 3px solid #34495e;
+            display: flex; justify-content: center; gap: 20px; padding: 12px 0;
+            position: sticky; top: 0; z-index: 999; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        .header-tab {
+            background: #34495e; color: #bbb; border: 2px solid #455a64;
+            padding: 10px 24px; font-size: 15px; font-weight: bold; border-radius: 8px;
+            cursor: pointer; transition: all 0.3s ease; display: flex; align-items: center; gap: 8px;
+        }
+        .header-tab:hover { color: #fff; border-color: #f1c40f; background: #2c3e50; }
+        .header-tab.active {
+            background: #f1c40f; color: #1a1a1a; border-color: #f39c12;
+            box-shadow: 0 0 10px rgba(241,196,15,0.5);
+        }
+
+        /* 📦 게임 화면 구역 분할 및 컨테이너 */
+        #main-container {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            flex-grow: 1; padding: 20px;
+        }
+        .game-mode-view { display: none; } 
+        .game-mode-view.active { display: flex; flex-direction: column; align-items: center; } 
+
+        h1 { margin: 10px 0 5px 0; font-size: 24px; color: #f1c40f; text-shadow: 0 0 10px rgba(241,196,15,0.3); }
+        .status-msg { font-size: 14px; color: #3498db; margin-bottom: 10px; font-weight: bold; height: 20px; }
+        
+        /* 🎛️ 메뉴 및 난이도 버튼 스타일 */
+        #btn-container, .ai-btn-group { display: flex; gap: 10px; margin-bottom: 15px; }
+        .menu-btn {
+            background: #252525; color: #fff; border: 2px solid #555;
+            padding: 8px 16px; font-size: 13px; font-weight: bold; border-radius: 6px;
+            cursor: pointer; transition: all 0.2s ease;
+        }
+        .menu-btn:hover { background: #333; border-color: #f1c40f; color: #f1c40f; }
+        .menu-btn:active { transform: scale(0.95); }
+
+        /* 난이도 전용 색상 디자인 */
+        .btn-easy { border-color: #2ecc71; color: #2ecc71; }
+        .btn-easy:hover, .btn-easy.selected { background: #2ecc71; color: #1a1a1a; }
+        .btn-normal { border-color: #f39c12; color: #f39c12; }
+        .btn-normal:hover, .btn-normal.selected { background: #f39c12; color: #1a1a1a; }
+        .btn-hard { border-color: #e74c3c; color: #e74c3c; }
+        .btn-hard:hover, .btn-hard.selected { background: #e74c3c; color: #1a1a1a; }
+
+        #game-layout { display: flex; gap: 30px; align-items: flex-start; }
+        
+        .player-section {
+            display: flex; flex-direction: column; align-items: center;
+            background: #1e1e1e; padding: 15px; border-radius: 12px; border: 2px solid #333;
+            position: relative;
+        }
+        .game-area { display: flex; gap: 15px; align-items: flex-start; }
+        .game-board { border: 4px solid #444; background-color: #000; }
+        
+        .side-panel { display: flex; flex-direction: column; gap: 15px; }
+        .side-box { background-color: #252525; border: 2px solid #444; padding: 10px; border-radius: 6px; text-align: center; width: 100px; }
+        .side-box h2 { margin: 0 0 5px 0; font-size: 13px; color: #e74c3c; }
+        .minicanvas { background-color: #000; border: 1px solid #333; }
+        .score-val { font-size: 18px; font-weight: bold; color: #2ecc71; }
+
+        .settings-group { display: flex; flex-direction: column; gap: 12px; text-align: left; }
+        .settings-item { display: flex; flex-direction: column; gap: 4px; }
+        .settings-item label { font-size: 11px; color: #ccc; font-weight: bold; }
+        .settings-item input[type="range"] { width: 100%; cursor: pointer; }
+        .settings-value { font-size: 11px; color: #f1c40f; text-align: right; margin-top: 2px; }
+
+        .attack-gauge-container {
+            width: 12px; height: 488px; background: #222; border: 2px solid #444;
+            border-radius: 4px; overflow: hidden; position: relative; display: flex; flex-direction: column-reverse;
+        }
+        .attack-gauge-fill { width: 100%; height: 0%; background: #e74c3c; transition: height 0.2s ease; box-shadow: 0 0 8px #e74c3c; }
+
+        #info { margin-top: 15px; font-size: 12px; color: #888; text-align: center; background: #1e1e1e; padding: 8px 20px; border-radius: 8px; }
+    </style>
+</head>
+<body>
+
+    <div id="global-header">
+        <button class="header-tab active" id="tab-pvp" onclick="switchMode('pvp')">⚔️ 1대1 대전 방</button>
+        <button class="header-tab" id="tab-ai" onclick="switchMode('ai')">🤖 지능형 봇전 대전</button>
+    </div>
+
+    <div id="main-container">
+        
+        <div id="view-pvp" class="game-mode-view active">
+            <h1>🏆 ONLINE VERSUS TETRIS (1VS1 ROOM)</h1>
+            <div class="status-msg" id="status-msg">버튼을 눌러 매칭을 시작하세요!</div>
+            
+            <div id="btn-container">
+                <button class="menu-btn" id="btn-start">시작하기 (멀티)</button>
+                <button class="menu-btn" id="btn-solo">혼자하기 (연습)</button>
+                <button class="menu-btn" id="btn-restart">다시시작</button>
+            </div>
+            
+            <div id="game-layout">
+                <div class="player-section" id="my-section">
+                    <div style="font-size:16px; font-weight:bold; margin-bottom:10px; color:#3498db;">MY BOARD</div>
+                    <div class="game-area">
+                        <div class="side-panel">
+                            <div class="side-box"><h2>HOLD</h2><canvas id="my-hold" class="minicanvas" width="80" height="80"></canvas></div>
+                            <div class="side-box"><h2>ATTACK</h2><div id="my-attack-count" class="score-val" style="color: #e74c3c;">0</div></div>
+                        </div>
+                        <div class="attack-gauge-container"><div id="my-attack-gauge" class="attack-gauge-fill"></div></div>
+                        <canvas id="my-tetris" class="game-board" width="240" height="480"></canvas>
+                        <div class="side-panel">
+                            <div class="side-box"><h2>NEXT</h2><canvas id="my-next" class="minicanvas" width="80" height="240"></canvas></div>
+                            <div class="side-box" style="width: 100px; padding: 8px;">
+                                <h2>SETTINGS</h2>
+                                <div class="settings-group">
+                                    <div class="settings-item"><label>반응속도(ARR)</label><input type="range" id="setting-arr" min="0" max="100" step="5" value="35"><div class="settings-value"><span id="val-arr">35</span> ms</div></div>
+                                    <div class="settings-item"><label>소프트드롭</label><input type="range" id="setting-softdrop" min="0" max="100" step="5" value="25"><div class="settings-value"><span id="val-softdrop">25</span> ms</div></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="player-section" id="opp-section" style="opacity: 0.3;">
+                    <div style="font-size:16px; font-weight:bold; margin-bottom:10px; color:#e67e22;">OPPONENT</div>
+                    <div class="game-area">
+                        <div class="side-panel">
+                            <div class="side-box"><h2>HOLD</h2><canvas id="opp-hold" class="minicanvas" width="80" height="80"></canvas></div>
+                            <div class="side-box"><h2>SCORE</h2><div id="opp-score" class="score-val">0</div></div>
+                        </div>
+                        <div class="attack-gauge-container"><div id="opp-attack-gauge" class="attack-gauge-fill"></div></div>
+                        <canvas id="opp-tetris" class="game-board" width="240" height="480"></canvas>
+                        <div class="side-panel"><div class="side-box"><h2>NEXT</h2><canvas id="opp-next" class="minicanvas" width="80" height="240"></canvas></div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-ai" class="game-mode-view">
+            <h1>🤖 AI PRACTICE LAB (봇 대전 룸)</h1>
+            <div class="status-msg" id="ai-status-msg" style="color: #11caa0;">봇 난이도를 선택한 뒤 시작하세요!</div>
+            
+            <div class="ai-btn-group">
+                <button class="menu-btn btn-easy selected" onclick="setBotDifficulty('easy', this)">🟢 Easy (초급 봇)</button>
+                <button class="menu-btn btn-normal" onclick="setBotDifficulty('normal', this)">🟡 Normal (중급 봇)</button>
+                <button class="menu-btn btn-hard" onclick="setBotDifficulty('hard', this)">🔴 Hard (인공지능 괴물)</button>
+                <button class="menu-btn" id="btn-ai-start" style="margin-left: 20px; background: #11caa0; color:#000; border-color:#11caa0;">🤖 대전 시작</button>
+            </div>
+            
+            <div id="game-layout">
+                <div class="player-section">
+                    <div style="font-size:16px; font-weight:bold; margin-bottom:10px; color:#3498db;">YOU</div>
+                    <div class="game-area">
+                        <div class="side-panel">
+                            <div class="side-box"><h2>HOLD</h2><canvas id="ai-my-hold" class="minicanvas" width="80" height="80"></canvas></div>
+                            <div class="side-box"><h2>ATTACK</h2><div id="ai-my-attack-count" class="score-val" style="color: #e74c3c;">0</div></div>
+                        </div>
+                        
+                        <div class="attack-gauge-container">
+                            <div id="ai-my-attack-gauge" class="attack-gauge-fill"></div>
+                        </div>
+
+                        <canvas id="ai-my-tetris" class="game-board" width="240" height="480"></canvas>
+                        
+                        <div class="side-panel">
+                            <div class="side-box"><h2>NEXT</h2><canvas id="ai-my-next" class="minicanvas" width="80" height="240"></canvas></div>
+                            <div class="side-box" style="width: 100px; padding: 8px;">
+                                <h2>SETTINGS</h2>
+                                <div class="settings-group">
+                                    <div class="settings-item">
+                                        <label>반응속도(ARR)</label>
+                                        <input type="range" id="ai-setting-arr" min="0" max="100" step="5" value="35">
+                                        <div class="settings-value"><span id="ai-val-arr">35</span> ms</div>
+                                    </div>
+                                    <div class="settings-item">
+                                        <label>소프트드롭</label>
+                                        <input type="range" id="ai-setting-softdrop" min="0" max="100" step="5" value="25">
+                                        <div class="settings-value"><span id="ai-val-softdrop">25</span> ms</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="player-section">
+                    <div style="font-size:16px; font-weight:bold; margin-bottom:10px; color:#11caa0;" id="bot-title-text">BOT (Easy)</div>
+                    <div class="game-area">
+                        <div class="side-panel">
+                            <div class="side-box"><h2>HOLD</h2><canvas id="bot-hold" class="minicanvas" width="80" height="80"></canvas></div>
+                            <div class="side-box"><h2>ATTACK</h2><div id="bot-attack-count" class="score-val" style="color: #f1c40f;">0</div></div>
+                        </div>
+                        
+                        <div class="attack-gauge-container">
+                            <div id="bot-attack-gauge" class="attack-gauge-fill"></div>
+                        </div>
+
+                        <canvas id="bot-tetris" class="game-board" width="240" height="480"></canvas>
+                        
+                        <div class="side-panel">
+                            <div class="side-box"><h2>NEXT</h2><canvas id="bot-next" class="minicanvas" width="80" height="240"></canvas></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="info">
+            <b>조작키:</b> 좌우 방향키 (이동) | <b>Z 키:</b> 반시계 회전 | <b>X 키 / ↑ 화살표:</b> 시계 회전<br>
+            아래 방향키 (소프트드롭) | <b>스페이스바:</b> 하드드롭 | <b>C 키:</b> 블록 보관(Hold)
+        </div>
+    </div>
+
+    <script>
+        let currentBotDifficulty = 'easy';
+
+        function switchMode(mode) {
+            document.querySelectorAll('.header-tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.game-mode-view').forEach(view => view.classList.remove('active'));
+            
+            if (mode === 'pvp') {
+                document.getElementById('tab-pvp').classList.add('active');
+                document.getElementById('view-pvp').classList.add('active');
+            } else if (mode === 'ai') {
+                document.getElementById('tab-ai').classList.add('active');
+                document.getElementById('view-ai').classList.add('active');
+            }
+        }
+
+        // 난이도 버튼 토글 핸들러
+        function setBotDifficulty(diff, element) {
+            currentBotDifficulty = diff;
+            
+            // 다른 난이도 버튼들의 selected 하이라이트 클래스 제거
+            document.querySelectorAll('.ai-btn-group .menu-btn').forEach(btn => btn.classList.remove('selected'));
+            element.classList.add('selected');
+            
+            // 봇 라벨 텍스트 변경
+            const labelMap = { 'easy': 'BOT (Easy)', 'normal': 'BOT (Normal)', 'hard': 'BOT (Hard)' };
+            document.getElementById('bot-title-text').innerText = labelMap[diff];
+            document.getElementById('ai-status-msg').innerText = `${labelMap[diff]} 모드가 선택되었습니다. 대전 시작을 눌러주세요!`;
+        }
+    </script>
+    
+    <script src="tetris/stats/aaa.js"></script>
+    <script src="tetris/stats/ai.js"></script>
+</body>
+</html>
