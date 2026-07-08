@@ -220,6 +220,29 @@ async def handle_start_custom_match(sid, data):
         'player2_status': 'ready'
     }, room=room_name)
 
+# 🔄 상대방과 다시하기(재경기) 요청 핸들러
+@sio.on('request_rematch')
+async def handle_request_rematch(sid, data):
+    room_id = data.get('room_id')
+    role = data.get('role')
+    room_name = f"room_{room_id}"
+    
+    print(f"[리턴매치 요청] 방 {room_id}의 {role} ({sid}) 가 다시하기를 눌렀습니다.")
+    
+    # 📢 복잡한 수락 절차 없이, 한 명이라도 다시하기를 누르면 
+    # 즉시 방 전체에 "재경기 시작!" 신호를 쏩니다.
+    await sio.emit('rematch_triggered', {'status': 'restart'}, room=room_name)
+    
+    # 🎮 기존에 짜놓으신 실제 테트리스 멀티플레이어 시작 신호('start_game')를 
+    # 새 게임판 데이터와 함께 다시 한번 방 전체에 뿌려줍니다!
+    await sio.emit('start_game', {
+        'room_id': room_id,
+        'player1_status': 'ready',
+        'player2_status': 'ready'
+    }, room=room_name)
+    
+    print(f"[재경기 가동] 방 {room_id} 의 리턴매치 배틀 신호가 정상 송출되었습니다.")
+
 # ----------------------------------------------------------------------
 # 🚀 [가동부 환경 파싱 및 포트 트리거]
 # ----------------------------------------------------------------------
