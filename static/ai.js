@@ -2,7 +2,6 @@
 console.log("🤖 지능형 AI 랩 엔진 V7.1 가동 (천장 멈춤 버그 및 홀드 UI 동기화 완료).");
 
 // const aiServerScoket = io("http://127.0.0.1:5000");
-console.log(window.location.origin);
 const aiServerScoket = io(window.location.origin);
 
 let aiGameActive = false;

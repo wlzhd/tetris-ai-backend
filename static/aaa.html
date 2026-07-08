@@ -107,17 +107,19 @@
             <h1>🏆 ONLINE VERSUS TETRIS (1VS1 ROOM)</h1>
             <div class="status-msg" id="status-msg">버튼을 눌러 매칭을 시작하세요!</div>
             
-            <div id="btn-container" style="flex-direction: column; align-items: center; gap: 15px;">
-                <div style="display: flex; gap: 10px;">
-                    <button class="menu-btn" id="btn-create-room" onclick="createCustomRoom()" style="background: #9b59b6; border-color: #8e44ad;">방 만들기 🏠</button>
+            <div id="btn-container" style="display: flex; flex-direction: column; align-items: center; gap: 15px; margin-bottom: 20px; width: 100%;">
+                
+                <div style="display: flex; gap: 10px; justify-content: center;">
+                    <button class="menu-btn" id="btn-create-room" onclick="createCustomRoom()" style="background: #9b59b6; border-color: #8e44ad; color: white;">방 만들기 🏠</button>
                     <button class="menu-btn" id="btn-solo">혼자하기 (연습)</button>
                     <button class="menu-btn" id="btn-restart">다시시작</button>
                 </div>
 
-                <div id="room-join-area" style="display: flex; gap: 8px; align-items: center; background: #2c3e50; padding: 10px 15px; border-radius: 8px; border: 1px solid #34495e;">
-                    <input type="text" id="input-room-id" placeholder="방 코드 입력 (예: 1234)" style="background: #1a1a1a; color: #fff; border: 1px solid #555; padding: 6px 12px; border-radius: 4px; font-size: 13px; font-weight: bold; width: 150px; text-align: center;">
-                    <button class="menu-btn" onclick="joinCustomRoom()" style="margin: 0; background: #2ecc71; border-color: #27ae60;">참가하기 ⚔️</button>
+                <div id="room-join-area" style="display: flex; gap: 10px; align-items: center; background: #2c3e50; padding: 8px 15px; border-radius: 8px; border: 1px solid #34495e;">
+                    <input type="text" id="input-room-id" placeholder="방 코드 입력 (예: 1234)" style="background: #1a1a1a; color: #fff; border: 1px solid #555; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; width: 160px; text-align: center;">
+                    <button class="menu-btn" onclick="joinCustomRoom()" style="margin: 0; background: #2ecc71; border-color: #27ae60; color: white;">참가하기 ⚔️</button>
                 </div>
+
             </div>
             
             <div id="game-layout">
