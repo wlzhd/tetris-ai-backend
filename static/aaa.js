@@ -326,22 +326,31 @@ document.getElementById('btn-solo').addEventListener('click', () => {
     startSprintRealtimeTimer(); // 💡 실시간 타이머 가동!
 });
 
-document.getElementById('btn-restart').addEventListener('click', () => {
-    resetAllBoardStates();
-    myGame.pendingAttacks = 0; oppGame.pendingAttacks = 0; myComboCount = -1; 
-    updateAttackGauges();
+// 🔄 방에서 [다시시작] 버튼을 눌렀을 때 실행되는 재경기 요청 함수
+if (document.getElementById('btn-restart')) {
+    document.getElementById('btn-restart').onclick = function() {
+        // 만약 지금 방 코드가 존재하는 '멀티플레이 방' 상태라면?
+        if (typeof roomId !== 'undefined' && roomId) {
+            document.getElementById('status-msg').innerHTML = `🔄 상대방에게 재대결 요청을 보내는 중...`;
+            // 서버로 재대결 요청 신호를 보냅니다.
+            socket.emit('request_rematch', { room_id: roomId, role: myRole });
+        } else {
+            // 방 코드가 없다면 기존 연습모드(혼자하기) 다시시작 로직 실행
+            if (typeof resetGame === 'function') resetGame(); 
+        }
+    };
+}
 
-    if (isSoloMode) {
-        gameActive = true;
-        sprintLinesCleared = 0;
-        sprintStartTime = performance.now();
-        myGame.nextQueue = [...generateSharedBag(), ...generateSharedBag()];
-        myPlayerReset();
-        startSprintRealtimeTimer(); // 💡 재시작 시 타이머 새로 가동!
-    } else {
-        gameActive = false;
-        document.getElementById('opp-section').style.opacity = "0.3"; 
-        document.getElementById('status-msg').innerText = "매칭을 다시 잡으려면 '시작하기'를 누르세요.";
+// 🔔 서버로부터 "상대가 재경기를 원한다"는 신호를 받았을 때 화면 처리
+socket.on('rematch_triggered', function(data) {
+    document.getElementById('status-msg').innerHTML = `⚔️ <span style="color: #e74c3c; font-weight:bold;">리턴 매치 성사!</span> 곧 다음 판이 시작됩니다!`;
+    
+    // 🎮 기존에 사용하시던 게임판 초기화 및 카운트다운 함수를 호출합니다.
+    // (예: 기존 start_game 이벤트가 왔을 때 실행되던 내부 테트리스 시작 함수명)
+    if (typeof initMultiGame === 'function') {
+        initMultiGame(); 
+    } else if (typeof startGameLoop === 'function') {
+        startGameLoop();
     }
 });
 

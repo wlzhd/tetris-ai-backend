@@ -107,18 +107,21 @@
             <h1>🏆 ONLINE VERSUS TETRIS (1VS1 ROOM)</h1>
             <div class="status-msg" id="status-msg">버튼을 눌러 매칭을 시작하세요!</div>
             
-            <div id="btn-container" style="display: flex; flex-direction: column; align-items: center; gap: 15px; margin: 15px 0; width: 100%;">
+            <div id="btn-container" style="display: flex; flex-direction: column; align-items: center; gap: 15px; margin: 20px 0; width: 100%; min-height: 90px; justify-content: center;">
                 
-                <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-                    <button class="menu-btn" id="btn-create-room" onclick="createCustomRoom()" style="background: #9b59b6; border-color: #8e44ad; color: white;">방 만들기 🏠</button>
-                    <button class="menu-btn" id="btn-start" style="background: #3498db; border-color: #2980b9; color: white;">빠른 매칭 ⚡</button>
-                    <button class="menu-btn" id="btn-solo">혼자하기 (연습)</button>
-                    <button class="menu-btn" id="btn-restart">다시시작</button>
+                <div style="min-height: 45px; display: flex; align-items: center; justify-content: center; text-align: center; width: 100%;">
+                    </div>
+
+                <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; width: 100%; max-width: 600px;">
+                    <button class="menu-btn" id="btn-create-room" onclick="createCustomRoom()" style="background: #9b59b6; border-color: #8e44ad; color: white; white-space: nowrap;">방 만들기 🏠</button>
+                    <button class="menu-btn" id="btn-start" style="background: #3498db; border-color: #2980b9; color: white; white-space: nowrap;">빠른 매칭 ⚡</button>
+                    <button class="menu-btn" id="btn-solo" style="white-space: nowrap;">혼자하기 (연습)</button>
+                    <button class="menu-btn" id="btn-restart" style="white-space: nowrap;">다시시작</button>
                 </div>
 
-                <div id="room-join-area" style="display: flex; gap: 10px; align-items: center; background: #2c3e50; padding: 10px 20px; border-radius: 8px; border: 1px solid #34495e;">
-                    <input type="text" id="input-room-id" placeholder="방 코드 입력 (예: 1234)" style="background: #1a1a1a; color: #fff; border: 1px solid #555; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; width: 160px; text-align: center;">
-                    <button class="menu-btn" onclick="joinCustomRoom()" style="margin: 0; background: #2ecc71; border-color: #27ae60; color: white;">참가하기 ⚔️</button>
+                <div id="room-join-area" style="display: flex; gap: 10px; align-items: center; background: #2c3e50; padding: 10px 20px; border-radius: 8px; border: 1px solid #34495e; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
+                    <input type="text" id="input-room-id" placeholder="방 코드 입력 (예: 1234)" style="background: #1a1a1a; color: #fff; border: 1px solid #555; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; width: 160px; text-align: center; outline: none;">
+                    <button class="menu-btn" onclick="joinCustomRoom()" style="margin: 0; background: #2ecc71; border-color: #27ae60; color: white; white-space: nowrap;">참가하기 ⚔️</button>
                 </div>
 
             </div>
