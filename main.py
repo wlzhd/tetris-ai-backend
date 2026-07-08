@@ -188,43 +188,57 @@ async def handle_ai_request(sid, data):
 # 🏠 1. 커스텀 방 만들기 이벤트
 @sio.on('create_custom_room')
 async def handle_create_custom_room(sid, data):
-    room_id = data.get('room_id')
+    room_id = str(data.get('room_id')).strip()
     room_name = f"room_{room_id}"
     await sio.enter_room(sid, room_name)
-    print(f"[방 개설] 방장 {sid} -> 방 코드 {room_id}")
+    
+    # 데이터베이스 등록할 때 room_name을 키값으로 명확히 지정
+    rooms[room_name] = { 'players': [sid, None] }
+    print(f"[방 개설] 방장 {sid} -> 방 코드 {room_id} (룸네임: {room_name})")
 
 # ⚔️ 2. 커스텀 방 참가하기 이벤트
 @sio.on('join_custom_room')
 async def handle_join_custom_room(sid, data):
-    room_id = data.get('room_id')
-    room_name = f"room_{room_id}"
-    await sio.enter_room(sid, room_name)
-    print(f"[방 참가] 도전자 {sid} -> 방 코드 {room_id}")
-    
-    # 두 유저가 연결되었음을 알림
-    await sio.emit('opponent_joined', {'room_id': room_id}, room=room_name)
-
-# 🚀 3. 방장이 [대전 시작하기] 버튼을 눌렀을 때 (★핵심 교정)
-@sio.on('start_custom_match')
-async def handle_start_custom_match(sid, data):
-    room_id = data.get('room_id')
+    room_id = str(data.get('room_id')).strip()
     room_name = f"room_{room_id}"
     
     if room_name in rooms:
-        p1 = rooms[room_name]['players'][0] # 방장 (소켓 ID)
-        p2 = rooms[room_name]['players'][1] # 도전자 (소켓 ID)
+        rooms[room_name]['players'][1] = sid  # 도전자를 플레이어2로 등록
+        await sio.enter_room(sid, room_name)
+        print(f"[방 참가] 도전자 {sid} -> 방 코드 {room_id} (룸네임: {room_name})")
         
-        # 공평한 7-Bag 랜덤 블록셋 생성
-        def gen_bag():
-            bag = ['I', 'O', 'T', 'L', 'J', 'S', 'Z']
-            np.random.shuffle(bag)
-            return list(bag)
-        initial_bags = [gen_bag(), gen_bag()]
+        # 두 유저가 한 방에 완전히 정렬되면 시작 허가 신호 송출!
+        await sio.emit('opponent_joined', {'room_id': room_id}, room=room_name)
+    else:
+        await sio.emit('status', "존재하지 않는 방 코드입니다!", to=sid)
+
+# 🚀 3. 방장이 [대전 시작하기] 버튼을 눌렀을 때 (★입장 제한 조건문 완벽 수정)
+@sio.on('start_custom_match')
+async def handle_start_custom_match(sid, data):
+    room_id = str(data.get('room_id')).strip()
+    # 💡 프론트엔드가 'room_숫자'로 보내든 '숫자'로 보내든 무조건 f"room_{숫자}" 규격으로 강제 치환합니다.
+    if not room_id.startswith("room_"):
+        room_name = f"room_{room_id}"
+    else:
+        room_name = room_id
+    
+    if room_name in rooms:
+        p1 = rooms[room_name]['players'][0]
+        p2 = rooms[room_name]['players'][1]
         
-        # 📢 [초핵심] 방장에게는 'p1' 역할을, 도전자에게는 'p2' 역할을 정확히 찢어서 발송합니다!
-        await sio.emit('match_start', {'roomId': room_name, 'role': 'p1', 'initialBags': initial_bags}, to=p1)
-        await sio.emit('match_start', {'roomId': room_name, 'role': 'p2', 'initialBags': initial_bags}, to=p2)
-        print(f"🚀 [배틀 시작] 커스텀 방 {room_id} -> p1:{p1} VS p2:{p2} 분리 완동!")
+        if p1 and p2:
+            def gen_bag():
+                bag = ['I', 'O', 'T', 'L', 'J', 'S', 'Z']
+                np.random.shuffle(bag)
+                return list(bag)
+            initial_bags = [gen_bag(), gen_bag()]
+            
+            # 각각의 소켓 ID로 p1, p2 역할을 완벽하게 찢어서 쏩니다.
+            await sio.emit('match_start', {'roomId': room_name, 'role': 'p1', 'initialBags': initial_bags}, to=p1)
+            await sio.emit('match_start', {'roomId': room_name, 'role': 'p2', 'initialBags': initial_bags}, to=p2)
+            print(f"🚀 [대전 가동] 커스텀 방 {room_name} 배틀 정상 활성화 완료!")
+    else:
+        print(f"⚠️ [대전 실패] 서버 rooms에 {room_name} 이 존재하지 않습니다! 현재 활성 룸 리스트: {list(rooms.keys())}")
 
 # 🔄 4. [다시시작] 버튼을 눌렀을 때 리턴매치 트리거 (★핵심 교정)
 @sio.on('request_rematch')

@@ -668,11 +668,8 @@ socket.on('opponent_joined', function(data) {
     }
 });
 
-// 4. 방장이 [대전 시작하기] 버튼을 눌렀을 때 백엔드로 신호 전송
+// 🎮 4. 방장이 [대전 시작하기] 버튼을 눌렀을 때 백엔드로 신호 전송
 function startCustomMatch() {
-    if (!roomId) return;
-    // 전역 변수 roomId에 들어있는 "room_1234" 에서 숫자만 추출해서 서버로 토스합니다.
-    const pureNumberId = roomId.replace("room_", "");
-    socket.emit('start_custom_match', { room_id: pureNumberId });
+    socket.emit('start_custom_match', { room_id: roomId });
 }
 mainLoop();
