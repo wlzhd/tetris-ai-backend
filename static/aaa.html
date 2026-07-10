@@ -97,6 +97,7 @@
 <body>
 
     <div id="global-header">
+        <h1>JIKONG TRIS</h1>
         <button class="header-tab active" id="tab-pvp" onclick="switchMode('pvp')">⚔️ 1대1 대전 방</button>
         <button class="header-tab" id="tab-ai" onclick="switchMode('ai')">🤖 지능형 봇전 대전</button>
     </div>
@@ -104,13 +105,16 @@
     <div id="main-container">
         
         <div id="view-pvp" class="game-mode-view active">
-            <h1>🏆 ONLINE VERSUS TETRIS (1VS1 ROOM)</h1>
-            <div class="status-msg" id="status-msg">버튼을 눌러 매칭을 시작하세요!</div>
-            
-            <div id="btn-container" style="display: flex; flex-direction: column; align-items: center; gap: 15px; margin: 20px 0; width: 100%; min-height: 90px; justify-content: center;">
+
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 70px; justify-content: center; width: 100%; margin-bottom: 10px;">
+                <div class="status-msg" id="status-msg" style="margin: 0; padding: 0; height: auto; text-align: center;">버튼을 눌러 매칭을 시작하세요!</div>
                 
-                <div style="min-height: 45px; display: flex; align-items: center; justify-content: center; text-align: center; width: 100%;">
-                    </div>
+                <div id="custom-room-display" style="font-size: 15px; font-weight: bold; color: #f1c40f; text-align: center; min-height: 20px;"></div>
+            </div>
+            
+            <div id="btn-container" style="display: flex; flex-direction: column; align-items: center; gap: 15px; margin: 10px 0; width: 100%; min-height: 90px; justify-content: center;">
+                
+            <!--<div style="min-height: 45px; display: flex; align-items: center; justify-content: center; text-align: center; width: 100%;"></div>-->
 
                 <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; width: 100%; max-width: 600px;">
                     <button class="menu-btn" id="btn-create-room" onclick="createCustomRoom()" style="background: #9b59b6; border-color: #8e44ad; color: white; white-space: nowrap;">방 만들기 🏠</button>
@@ -120,47 +124,70 @@
                 </div>
 
                 <div id="room-join-area" style="display: flex; gap: 10px; align-items: center; background: #2c3e50; padding: 10px 20px; border-radius: 8px; border: 1px solid #34495e; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
-                    <input type="text" id="input-room-id" placeholder="방 코드 입력 (예: 1234)" style="background: #1a1a1a; color: #fff; border: 1px solid #555; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; width: 160px; text-align: center; outline: none;">
+                    <input type="text" 
+                    id="input-room-id" 
+                    placeholder="방 코드 입력 (예: 1234)" 
+                    oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+                    style="background: #1a1a1a; color: #fff; border: 1px solid #555; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; width: 160px; text-align: center; outline: none;">
                     <button class="menu-btn" onclick="joinCustomRoom()" style="margin: 0; background: #2ecc71; border-color: #27ae60; color: white; white-space: nowrap;">참가하기 ⚔️</button>
                 </div>
 
             </div>
             
-            <div id="game-layout">
-                <div class="player-section" id="my-section">
-                    <div style="font-size:16px; font-weight:bold; margin-bottom:10px; color:#3498db;">MY BOARD</div>
-                    <div class="game-area">
-                        <div class="side-panel">
-                            <div class="side-box"><h2>HOLD</h2><canvas id="my-hold" class="minicanvas" width="80" height="80"></canvas></div>
-                            <div class="side-box"><h2>ATTACK</h2><div id="my-attack-count" class="score-val" style="color: #e74c3c;">0</div></div>
-                        </div>
-                        <div class="attack-gauge-container"><div id="my-attack-gauge" class="attack-gauge-fill"></div></div>
-                        <canvas id="my-tetris" class="game-board" width="240" height="480"></canvas>
-                        <div class="side-panel">
-                            <div class="side-box"><h2>NEXT</h2><canvas id="my-next" class="minicanvas" width="80" height="240"></canvas></div>
-                            <div class="side-box" style="width: 100px; padding: 8px;">
-                                <h2>SETTINGS</h2>
-                                <div class="settings-group">
-                                    <div class="settings-item"><label>반응속도(ARR)</label><input type="range" id="setting-arr" min="0" max="100" step="5" value="35"><div class="settings-value"><span id="val-arr">35</span> ms</div></div>
-                                    <div class="settings-item"><label>소프트드롭</label><input type="range" id="setting-softdrop" min="0" max="100" step="5" value="25"><div class="settings-value"><span id="val-softdrop">25</span> ms</div></div>
+            <div style="display: flex; gap: 30px; align-items: flex-start; justify-content: center; width: 100%; max-width: 1240px; margin-top: 10px;">
+                
+                <div id="game-layout" style="display: flex; gap: 25px; align-items: flex-start;">
+                    
+                    <div class="player-section" id="my-section">
+                        <div style="font-size:16px; font-weight:bold; margin-bottom:10px; color:#3498db;">MY BOARD</div>
+                        <div class="game-area">
+                            <div class="side-panel">
+                                <div class="side-box"><h2>HOLD</h2><canvas id="my-hold" class="minicanvas" width="80" height="80"></canvas></div>
+                                <div class="side-box"><h2>ATTACK</h2><div id="my-attack-count" class="score-val" style="color: #e74c3c;">0</div></div>
+                            </div>
+                            <div class="attack-gauge-container"><div id="my-attack-gauge" class="attack-gauge-fill"></div></div>
+                            <canvas id="my-tetris" class="game-board" width="240" height="480"></canvas>
+                            <div class="side-panel">
+                                <div class="side-box"><h2>NEXT</h2><canvas id="my-next" class="minicanvas" width="80" height="240"></canvas></div>
+                                <div class="side-box" style="width: 100px; padding: 8px;">
+                                    <h2>SETTINGS</h2>
+                                    <div class="settings-group">
+                                        <div class="settings-item"><label>반응속도(ARR)</label><input type="range" id="setting-arr" min="0" max="100" step="5" value="35"><div class="settings-value"><span id="val-arr">35</span> ms</div></div>
+                                        <div class="settings-item"><label>소프트드롭</label><input type="range" id="setting-softdrop" min="0" max="100" step="5" value="25"><div class="settings-value"><span id="val-softdrop">25</span> ms</div></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
+
+                    <div class="player-section" id="opp-section" style="opacity: 0.3;">
+                        <div style="font-size:16px; font-weight:bold; margin-bottom:10px; color:#e67e22;">OPPONENT</div>
+                        <div class="game-area">
+                            <div class="side-panel">
+                                <div class="side-box"><h2>HOLD</h2><canvas id="opp-hold" class="minicanvas" width="80" height="80"></canvas></div>
+                                <div class="side-box"><h2>SCORE</h2><div id="opp-score" class="score-val">0</div></div>
+                            </div>
+                            <div class="attack-gauge-container"><div id="opp-attack-gauge" class="attack-gauge-fill"></div></div>
+                            <canvas id="opp-tetris" class="game-board" width="240" height="480"></canvas>
+                            <div class="side-panel"><div class="side-box"><h2>NEXT</h2><canvas id="opp-next" class="minicanvas" width="80" height="240"></canvas></div></div>
+                        </div>
+                    </div>
+
                 </div>
 
-                <div class="player-section" id="opp-section" style="opacity: 0.3;">
-                    <div style="font-size:16px; font-weight:bold; margin-bottom:10px; color:#e67e22;">OPPONENT</div>
-                    <div class="game-area">
-                        <div class="side-panel">
-                            <div class="side-box"><h2>HOLD</h2><canvas id="opp-hold" class="minicanvas" width="80" height="80"></canvas></div>
-                            <div class="side-box"><h2>SCORE</h2><div id="opp-score" class="score-val">0</div></div>
-                        </div>
-                        <div class="attack-gauge-container"><div id="opp-attack-gauge" class="attack-gauge-fill"></div></div>
-                        <canvas id="opp-tetris" class="game-board" width="240" height="480"></canvas>
-                        <div class="side-panel"><div class="side-box"><h2>NEXT</h2><canvas id="opp-next" class="minicanvas" width="80" height="240"></canvas></div></div>
+                <div id="jikong-chat-panel" style="width: 320px; height: 534px; background: #1e1e1e; border: 2px solid #333; border-radius: 12px; padding: 15px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 15px rgba(0,0,0,0.4); box-sizing: border-box;">
+                    <div style="font-size: 14px; font-weight: bold; color: #f1c40f; border-bottom: 1px solid #333; padding-bottom: 8px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">💬 ROOM CHAT</div>
+                    
+                    <div id="chat-log-box" style="flex-grow: 1; width: 100%; background: #0b0b0b; border-radius: 6px; border: 1px solid #252525; padding: 10px; overflow-y: auto; font-size: 13px; color: #eee; font-family: 'Malgun Gothic', sans-serif; display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; margin-bottom: 10px;">
+                        <div style="color: #666; font-style: italic; text-align: center; font-size: 11px; margin-top: 180px;">[ 대기실 / 인게임 통합 채팅 채널 ]</div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 8px; width: 100%;">
+                        <input type="text" id="chat-input-field" placeholder="메시지를 입력하세요... (Enter)" style="flex-grow: 1; background: #050505; color: #fff; border: 1px solid #444; padding: 10px; border-radius: 6px; font-size: 12px; outline: none; font-weight: bold; box-sizing: border-box;">
+                        <button class="menu-btn" onclick="sendRoomChatMessage()" style="margin: 0; padding: 0 14px; font-size: 12px; background: #f1c40f; border-color: #f39c12; color: #1a1a1a;">전송</button>
                     </div>
                 </div>
+
             </div>
         </div>
 

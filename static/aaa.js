@@ -317,6 +317,13 @@ function startSprintRealtimeTimer() {
 document.getElementById('btn-start').addEventListener('click', () => {
     resetAllBoardStates();
     isSoloMode = false;
+    
+    // 🛡️ [추가] 빠른 매칭을 탈 때는 예전 커스텀 방 잔상을 완전히 지워버려 채팅 채널 꼬임을 원천 차단합니다!
+    customRoomNum = null; 
+    customRoomRole = null;
+    roomId = null;
+    myRole = null;
+
     document.getElementById('opp-section').style.opacity = "0.3";
     document.getElementById('status-msg').innerText = "상대 플레이어를 검색 중입니다...";
     socket.emit('request_match'); 
@@ -403,10 +410,26 @@ socket.on('opponent_sync', (data) => {
     drawNext(oppGame.nextCtx, oppGame.nextCanvas, oppGame.nextQueue);
 });
 
-socket.on('status', (msg) => { if(!isSoloMode) document.getElementById('status-msg').innerText = msg; });
+socket.on('status', (msg) => { 
+    // 💡 [초핵심] 내가 커스텀 방 모드(customRoomNum이 존재할 때)일 때는 
+    // 연타나 비동기 에러로 인해 날아오는 공용 텍스트 오염을 철저히 씹어버립니다!
+    if (customRoomNum) {
+        console.log("⚠️ 커스텀 방 모드 활성화 중이므로 공용 status 메시지를 무시합니다:", msg);
+        return; 
+    }
+    
+    // 일반 빠른매칭 모드일 때만 정상 작동
+    if(!isSoloMode) document.getElementById('status-msg').innerText = msg; 
+});
+
+// 🔔 빠른 매칭 성공 수신부 구역 수리
 socket.on('match_start', (data) => {
-    // 🔥 [★초초초핵심] 시작 신호나 재경기 신호가 오면 무조건 기존 도화지부터 깨끗하게 닦습니다!
+    // 시작 신호가 오면 무조건 도화지 세척
     resetAllBoardStates();
+
+    // 🛡️ [추가] 빠른 매칭 전용 룸 컨텍스트 순정 보존 작업
+    customRoomNum = null;
+    customRoomRole = null;
 
     roomId = data.roomId; 
     myRole = data.role;
@@ -662,7 +685,7 @@ function mainLoop(time = 0) {
     drawGrid(myGame.ctx, myGame.canvas); drawMatrix(myGame.board, {x:0, y:0}, null, myGame.ctx); drawMyGhost();
     if (myGame.player) { drawMatrix(myGame.player.matrix, myGame.player.pos, myGame.player.color, myGame.ctx); }
     drawGrid(oppGame.ctx, oppGame.canvas); drawMatrix(oppGame.board, {x:0, y:0}, null, oppGame.ctx);
-    if (oppGame.player) { drawMatrix(oppGame.player.matrix, oppGame.player.pos, oppGame.player.color, oppGame.ctx); }
+    if (oppGame.player && oppGame.player.matrix) { drawMatrix(oppGame.player.matrix, oppGame.player.pos, oppGame.player.color, oppGame.ctx);}
 
     requestAnimationFrame(mainLoop);
 }
@@ -676,72 +699,110 @@ function createCustomRoom() {
 
     customRoomNum = Math.floor(1000 + Math.random() * 9000).toString();
     customRoomRole = 'p1'; 
-    
-    // 🚫 일반 빠른매칭 변수를 오염시키지 않기 위해 철저히 분리
-    roomId = null; 
-    myRole = null;
+    roomId = "custom_room_" + customRoomNum; 
+    myRole = 'p1';
 
-    // 💡 방을 만들었을 때는 모든 제어 버튼이 정상 노출됩니다.
-    document.getElementById('btn-solo').style.display = "inline-block";
-    if (document.getElementById('btn-start')) document.getElementById('btn-start').style.display = "inline-block";
-    document.getElementById('room-join-area').style.display = "flex";
+    showControlButtonsAgain();
 
-    document.getElementById('status-msg').innerHTML = 
-        `🏠 생성된 방 코드: <span style="color: #f1c40f; font-size: 22px; font-weight: bold; background: #000; padding: 2px 8px; border-radius: 4px;">${customRoomNum}</span> (상대 대기 중...)<br>` +
-        `<span style="color: #ff9f43; font-size: 12px; font-weight: bold;">상대방에게 코드를 알려주세요! 혼자하기(연습)를 하며 키보드를 마구 눌러도 코드는 절대 안 사라집니다!</span>`;
+    document.getElementById('status-msg').innerText = "🏠 새로운 커스텀 대기실이 개설되었습니다.";
+    // 💡 2층 독립 디스플레이 공간에 코드를 이쁘게 고정합니다.
+    document.getElementById('custom-room-display').innerHTML = 
+        `방 코드: <span style="color: #fff; background: #9b59b6; padding: 3px 10px; border-radius: 4px; font-size: 16px; font-weight: bold;">${customRoomNum}</span> (상대 대기 중...)`;
     
     socket.emit('create_custom_room', { room_id: customRoomNum });
 }
 
-// 2. 방 참가하기 (도전자)
+let isJoinProcessing = false; 
+
+// 2. 방 참가하기 (도전자 - ★재클릭 시 서버 오염 원천 차단 버전)
 function joinCustomRoom() {
+    if (isJoinProcessing) return;
+    isJoinProcessing = true;
+
     const inputVal = document.getElementById('input-room-id').value.trim();
-    if (!inputVal) { alert("방 코드를 입력해주세요!"); return; }
+    if (!inputVal) { alert("방 코드를 입력해주세요!"); isJoinProcessing = false; return; }
     
+    // 🛡️ [초핵심 방어막] 내가 이미 이 방 코드로 접속 완료한 도전자('p2') 상태라면?
+    // 백엔드로 소켓 신호를 또 날려서 방장의 룸 데이터베이스를 오염시키지 않고, 
+    // 브라우저 내부에서 즉시 대기 완료 화면으로 복구 연동합니다!
+    if (customRoomNum === inputVal && customRoomRole === 'p2') {
+        console.log("⚠️ [안심 복구] 이미 접속된 방입니다. 서버 패킷 송출을 차단하고 UI를 고정합니다.");
+        
+        document.getElementById('status-msg').innerHTML = `🤝 <span style="color: #f1c40f; font-weight:bold;">방에 정상 입장했습니다!</span><br><span style="font-size: 13px; color: #ccc;">방장 플레이어의 게임 시작을 기다리는 중... ⏳</span>`;
+        document.getElementById('custom-room-display').innerHTML = `접속 중인 방: <span style="color: #2ecc71; font-weight: bold;">${customRoomNum}</span>`;
+        
+        isJoinProcessing = false;
+        return;
+    }
+    
+    // 완전히 새로운 방 번호를 입력했을 때만 깨끗하게 초기화 후 서버로 전송
     resetAllBoardStates();
     
     customRoomNum = inputVal;
     customRoomRole = 'p2';
-    roomId = null;
-    myRole = null;
+    roomId = "custom_room_" + customRoomNum;
+    myRole = 'p2';
     
-    document.getElementById('status-msg').innerHTML = `⏳ <span style="color: #3498db; font-weight:bold;">[방 ${inputVal}번]</span>에 참가 요청을 보냈습니다...`;
+    document.getElementById('status-msg').innerText = `방 참가 요청 중...⏳`;
+    document.getElementById('custom-room-display').innerHTML = `접속 중인 방: <span style="color: #2ecc71; font-weight: bold;">${customRoomNum}</span>`;
+    
     socket.emit('join_custom_room', { room_id: inputVal });
+
+    setTimeout(() => {
+        isJoinProcessing = false;
+    }, 600);
 }
 
-// 3. 동일한 방에 두 사람이 모였을 때 트리거
+// 3. 동일한 방에 두 사람이 모였을 때 트리거 (★무조건 문구 복구 치트키)
 socket.on('opponent_joined', function(data) {
+    if (sprintTimerInterval) { 
+        clearInterval(sprintTimerInterval); 
+        sprintTimerInterval = null; 
+    }
+    isJoinProcessing = false; 
+
     if (customRoomRole === 'p1') {
         document.getElementById('status-msg').innerHTML = 
-            `👥 <span style="color: #2ecc71; font-weight:bold;">도전자가 입장했습니다!</span> 대전을 시작할 준비가 되었습니다.<br><br>` +
-            `<button class="menu-btn" onclick="startCustomMatch()" style="background: #e74c3c; border-color: #c0392b; font-size: 16px; padding: 12px 30px; font-weight: bold; color: white; cursor: pointer; border-radius: 8px; box-shadow: 0 0 15px rgba(231,76,60,0.6);">🚀 대전 시작하기 (클릭!)</button>`;
+            `👥 <span style="color: #2ecc71; font-weight:bold;">도전자가 입장했습니다!</span> 대전을 시작할 준비가 되었습니다.<br>` +
+            `<button class="menu-btn" onclick="startCustomMatch()" style="background: #e74c3c; border-color: #c0392b; font-size: 16px; padding: 12px 30px; font-weight: bold; color: white; cursor: pointer; border-radius: 8px; box-shadow: 0 0 15px rgba(231,76,60,0.6); margin-top: 10px;">🚀 대전 시작하기 (클릭!)</button>`;
     } else if (customRoomRole === 'p2') {
-        document.getElementById('status-msg').innerHTML = `🤝 <span style="color: #f1c40f; font-weight:bold;">방에 정상 입장했습니다!</span><br>방장 플레이어가 게임을 시작하기를 기다리는 중... ⏳`;
+        document.getElementById('status-msg').innerHTML = `🤝 <span style="color: #f1c40f; font-weight:bold;">방에 정상 입장했습니다!</span><br><span style="font-size: 13px; color: #ccc;">방장 플레이어의 게임 시작을 기다리는 중... ⏳</span>`;
+    }
+    
+    if (customRoomNum) {
+        document.getElementById('custom-room-display').innerHTML = 
+            `유지 중인 방 코드: <span style="color: #fff; background: #9b59b6; padding: 3px 10px; border-radius: 4px; font-size: 16px; font-weight: bold;">${customRoomNum}</span>`;
     }
 });
 
-// 4. 방장이 [대전 시작하기] 버튼을 눌렀을 때 백엔드로 신호 전송
+// 4. 방장이 [대전 시작하기] 버튼을 눌렀을 때 백엔드로 신호 전송 (★오차 제어 주소 파싱)
 function startCustomMatch() {
-    if (!customRoomNum) return;
-    socket.emit('start_custom_match', { room_id: customRoomNum });
+    // 💡 어떤 상황에서도 룸 주소의 순수한 '숫자' 값만 정확하게 발라내어 백엔드로 전달합니다!
+    let pureNum = customRoomNum;
+    if (!pureNum && roomId) {
+        pureNum = roomId.replace("custom_room_", "").replace("room_", "");
+    }
+    if (!pureNum) return;
+
+    socket.emit('start_custom_match', { room_id: pureNum.trim() });
 }
 
-// 💥 5. [ match_start_custom ] 커스텀 매치 가동 (★인게임 진입 시 제어 버튼들 완전 삭제)
+// 💡 매치 시작 이벤트가 오면 처리 플래그를 깔끔하게 초기화해줍니다.
 socket.on('match_start_custom', function(data) {
+    isJoinProcessing = false; // 락 해제
     resetAllBoardStates();
     
-    // 게임 배틀 세션이 시작되는 순간에만 공용 룸인자 매핑 가동!
     roomId = data.roomId;
     myRole = data.role;
     customRoomRole = data.role; 
-    isSoloMode = false; // 대전이므로 연습 모드 강제 해제
+    isSoloMode = false; 
     
     document.getElementById('status-msg').innerText = "⚔️ 1VS1 실시간 매치 스타트!!";
     document.getElementById('opp-section').style.opacity = "1.0";
 
-    // 🚨 [요구사항 2] 인게임 상태가 되면 혼자하기, 빠른매칭 버튼 및 방입장 창을 통째로 숨겨버립니다!
     document.getElementById('btn-solo').style.display = "none";
-    if (document.getElementById('btn-start')) document.getElementById('btn-start').style.display = "none";
+    document.getElementById('btn-start').style.display = "none";
+    document.getElementById('btn-restart').style.display = "none";
     document.getElementById('room-join-area').style.display = "none"; 
     
     const serverBags = (myRole === 'p1') ? data.initialBags[0] : data.initialBags[1];
@@ -750,53 +811,51 @@ socket.on('match_start_custom', function(data) {
     myPlayerReset();
 });
 
-// 💥 5. [ match_start_custom ] 대전 시작 이벤트 (★인게임 진입 시 연습하기 버튼 완전 삭제)
-socket.on('match_start_custom', function(data) {
-    resetAllBoardStates();
-    
-    roomId = data.roomId;
-    myRole = data.role;
-    customRoomRole = data.role; 
-    
-    document.getElementById('status-msg').innerText = "⚔️ 1VS1 실시간 매치 스타트!!";
-    document.getElementById('opp-section').style.opacity = "1.0";
-
-    // 🚨 [요구사항 2] 게임이 본격적으로 가동되면 혼자하기(연습) 버튼을 화면에서 즉시 숨겨버립니다!
-    document.getElementById('btn-solo').style.display = "none";
-    if (document.getElementById('btn-start')) document.getElementById('btn-start').style.display = "none";
-    document.getElementById('room-join-area').style.display = "none"; // 방입장 창도 같이 숨겨 정갈하게 만듭니다.
-    
-    const serverBags = (myRole === 'p1') ? data.initialBags[0] : data.initialBags[1];
-    myGame.nextQueue = serverBags.map(type => SHAPES[type].matrix.map(row => [...row]));
-    gameActive = true;
-    myPlayerReset();
-});
-
-// 💀 6. 대전이 완전히 끝나서 한 명이 죽으면 버튼을 다시 활성화해주는 함수
+// 💀 6. 게임 종료 후 혼자하기(대기실 스파링) 자동 복구 시스템
 function showControlButtonsAgain() {
-    // 🚨 [요구사항 2] 대전 종료(GAME OVER) 시 혼자하기 및 제어판 UI 원상복구 활성화!
+    isSoloMode = true; 
+    gameActive = true; 
+
+    const tempRoomId = roomId || ("custom_room_" + customRoomNum);
+    const tempMyRole = myRole || customRoomRole;
+    resetAllBoardStates();
+    roomId = tempRoomId;
+    myRole = tempMyRole;
+
     document.getElementById('btn-solo').style.display = "inline-block";
-    if (document.getElementById('btn-start')) document.getElementById('btn-start').style.display = "inline-block";
+    document.getElementById('btn-start').style.display = "inline-block";
+    document.getElementById('btn-restart').style.display = "inline-block";
     document.getElementById('room-join-area').style.display = "flex";
+
+    document.getElementById('opp-section').style.opacity = "0.2";
+    myGame.nextQueue = [...generateSharedBag(), ...generateSharedBag()];
+    myPlayerReset();
+
+    if (customRoomNum) {
+        document.getElementById('custom-room-display').innerHTML = `유지 중인 방 코드: <span style="color: #fff; background: #9b59b6; padding: 3px 10px; border-radius: 4px; font-size: 16px; font-weight: bold;">${customRoomNum}</span>`;
+        if (customRoomRole === 'p1') {
+            document.getElementById('status-msg').innerHTML = 
+                `<span style="color: #f1c40f; font-weight:bold;">🎮 라운드 종료! 각자 연습 모드로 자동 전환되었습니다.</span><br>` +
+                `<button class="menu-btn" onclick="startCustomMatch()" style="background: #e74c3c; border-color: #c0392b; font-size: 15px; padding: 8px 20px; font-weight: bold; color: white; margin-top: 8px;">🚀 다음 판 시작하기 (방장 클릭!)</button>`;
+        } else {
+            document.getElementById('status-msg').innerHTML = `<span style="color: #3498db; font-weight:bold;">⏳ 각자 연습하며 대기 중...</span><br><span style="font-size:12px; color:#aaa;">방장이 다음 판을 시작하면 즉시 연동됩니다.</span>`;
+        }
+    }
 }
 
-// 💡 7. 혼자하기(연습) 버튼 전용 독립 이벤트 리스너 (★오염 방지 완벽 방어막 버전)
+// 💡 7. 혼자하기(연습) 버튼 직접 클릭 시 핸들러
 document.getElementById('btn-solo').addEventListener('click', () => {
-    // 1. 현재 유지 중인 독립 방 번호 백업
     const backupNum = customRoomNum;
     const backupRole = customRoomRole;
 
-    // 2. 보드판 캔버스 완벽 청소
     resetAllBoardStates();
     
-    // 3. 백업 데이터 복구
     customRoomNum = backupNum;
     customRoomRole = backupRole;
-
-    // 🛡️ [초초초핵심 방어막] 혼자 연습할 때 키보드를 눌러도 sync_game 신호가 
-    // 서버로 날아가 룸을 파괴하지 않도록 roomId를 철저히 null로 고정 유지합니다!
-    roomId = null;
-    myRole = null;
+    if (backupNum) {
+        roomId = "custom_room_" + backupNum;
+        myRole = backupRole;
+    }
 
     isSoloMode = true; 
     gameActive = true;
@@ -808,12 +867,154 @@ document.getElementById('btn-solo').addEventListener('click', () => {
     myPlayerReset();
     startSprintRealtimeTimer(); 
 
-    // 🏠 상단 바에 방 코드 유지 표기
     if (backupNum) {
-        document.getElementById('status-msg').innerHTML = 
-            `🏠 유지 중인 방 코드: <span style="color: #f1c40f; font-size: 20px; font-weight: bold; background: #000; padding: 2px 8px; border-radius: 4px;">${backupNum}</span> (혼자 연습 중...)<br>` +
-            `<span style="color: #2ecc71; font-size: 12px; font-weight: bold;">상대방이 이 코드를 치고 들어오면 연습이 정지되고 대전 버튼이 켜집니다!</span>`;
+        document.getElementById('status-msg').innerText = "⏱️ 연습 모드 가동 중 (상대 난입 대기)...";
+        document.getElementById('custom-room-display').innerHTML = 
+            `유지 중인 방 코드: <span style="color: #fff; background: #9b59b6; padding: 3px 10px; border-radius: 4px; font-size: 16px; font-weight: bold;">${backupNum}</span>`;
+    } else {
+        document.getElementById('status-msg').innerText = "⏱️ 연습 모드 가동 중...";
     }
 });
 
+socket.on('rematch_triggered', function(data) {
+    if (sprintTimerInterval) clearInterval(sprintTimerInterval);
+    resetAllBoardStates();
+});
+
+socket.on('opponent_left', function() {
+    console.log("🔌 상대방의 접속 종료가 감지되어 상대방 화면을 완전히 청소합니다.");
+    
+    // 1. 메모리에 잔존하는 상대방 지형 데이터 구조 0으로 올 클리어
+    oppGame.board = Array.from({length: 20}, () => Array(10).fill(0));
+    oppGame.score = 0;
+    if (oppGame.scoreElement) oppGame.scoreElement.innerText = 0;
+    oppGame.holdType = null;
+    oppGame.nextQueue = [];
+    oppGame.pendingAttacks = 0;
+    
+    // 🛡️ [초핵심] 객체 껍데기만 남겨두지 않고 완전한 null로 찢어버려,
+    // mainLoop 조건문(if (oppGame.player)) 자체를 원천 탈락시켜 잔상 렌더링을 완전히 차단합니다!
+    oppGame.player = null;
+    
+    // 공격 게이지 물리 리셋
+    if (oppGame.gaugeElement) updateAttackGauge(oppGame.gaugeElement, 0);
+
+    // 2. 캔버스 강제 물리 드로잉 리프레시 (검은 도화지로 즉시 덮어쓰기)
+    // 이 처리를 수동으로 한 번 해줘야 픽셀 버퍼에 고여있던 유령 블록이 100% 증발합니다.
+    drawGrid(oppGame.ctx, oppGame.canvas);
+    drawMatrix(oppGame.board, {x:0, y:0}, null, oppGame.ctx);
+
+    // 3. 상대방 미니 프리뷰 캔버스(NEXT, HOLD) 원본 함수 예외 우회 강제 청소
+    if (oppGame.holdCtx && oppGame.holdCanvas) {
+        oppGame.holdCtx.fillStyle = '#000';
+        oppGame.holdCtx.fillRect(0, 0, oppGame.holdCanvas.width, oppGame.holdCanvas.height);
+    }
+    if (oppGame.nextCtx && oppGame.nextCanvas) {
+        oppGame.nextCtx.fillStyle = '#000';
+        oppGame.nextCtx.fillRect(0, 0, oppGame.nextCanvas.width, oppGame.nextCanvas.height);
+    }
+    
+    // 4. 상대방 구역 섹션을 반투명하게 흐리게 만들어 빈방임을 가시화
+    const oppSec = document.getElementById('opp-section');
+    if (oppSec) oppSec.style.opacity = "0.2";
+    
+    // 5. 내 게임 동결 (연습모드는 멈추지 않되 대전 세션 완전 Off)
+    gameActive = false;
+});
+
 mainLoop();
+
+// 💡 1. DOM 요소 바인딩 가드 (입력 및 전송 버튼 전용)
+window.addEventListener('DOMContentLoaded', () => {
+    const chatInput = document.getElementById('chat-input-field');
+    const chatBtn = document.querySelector('#jikong-chat-panel button.menu-btn');
+
+    if (chatInput) {
+        // 채팅창 입력 중 테트리스 블록 조작키 오염 방지 가드
+        chatInput.addEventListener('keydown', (e) => {
+            e.stopPropagation(); 
+            if (e.keyCode === 13) { 
+                executeSendChatMessage();
+            }
+        });
+    }
+
+    if (chatBtn) {
+        // [전송] 버튼 클릭 이벤트 연동 (인라인 onclick 흔적 완전 박멸)
+        chatBtn.removeAttribute('onclick'); 
+        chatBtn.addEventListener('click', () => {
+            executeSendChatMessage();
+        });
+    }
+});
+
+// 🚀 2. 채팅 전송 핵심 함수 (글로벌 룸 ID 스냅샷 실시간 추적)
+function executeSendChatMessage() {
+    const inputField = document.getElementById('chat-input-field');
+    if (!inputField) return;
+    
+    const message = inputField.value.trim();
+    if (!message) return; 
+    
+    // 💡 빠른 매칭 룸 ID(roomId)를 1순위로 강제 징집합니다.
+    let activeRoom = roomId || (customRoomNum ? "custom_room_" + customRoomNum : null);
+    
+    console.log("📤 [JIKONG CHAT 발사] 타겟 채널 주소 ➔", activeRoom);
+
+    if (!activeRoom) { 
+        alert("방을 개설하거나 빠른 매칭을 시작한 뒤 대화가 가능합니다!"); 
+        return; 
+    }
+
+    const currentRole = myRole || customRoomRole || 'p2';
+
+    socket.emit('send_room_chat', {
+        roomId: activeRoom,
+        role: currentRole,
+        msg: message
+    });
+
+    inputField.value = ""; 
+    inputField.focus();    
+}
+
+// 🎯 3. [★초초초핵심 개혁] 변수 꼬임 필터를 완전 삭제한 '글로벌 강제 렌더링' 수신 리스너!
+// 💡 가드 바깥으로 독립 배치하여 소켓 패킷 유실을 원천 차단합니다.
+socket.off('receive_room_chat'); // 중복 바인딩 버그 완전 세척
+socket.on('receive_room_chat', function(data) {
+    console.log("📥 [JIKONG CHAT] 화면 주입 패킷 실제 도달 ➔", data);
+    
+    // 1대1 대전 뷰(#view-pvp) 내부의 진짜 대화창 로그 박스를 정밀 조준합니다![cite: 4]
+    const pvpView = document.getElementById('view-pvp');
+    if (!pvpView) return;
+    const logBox = pvpView.querySelector('#chat-log-box');
+    if (!logBox) return;
+    
+    // 초기 환영 안내문 문구가 들어있다면 최초 한 번 증발[cite: 10]
+    if (logBox.innerHTML.includes('통합 채팅 채널')) {
+        logBox.innerHTML = '';
+    }
+
+    // 💡 [유저님 요청] 방장/도전자 명칭을 전면 폐지하고 p1, p2 태그로 칼성형!
+    let badgeColor = '#e67e22'; // p2 기본 컬러 (오렌지)
+    let badgeName = '[p2]';
+    
+    // 데이터의 role 값이 p1 문자를 포함하고 있다면 블루팀 p1으로 고정 판정
+    if (data.role && data.role.toString().includes('p1')) {
+        badgeColor = '#3498db'; // p1 기본 컬러 (블루)
+        badgeName = '[p1]';
+    }
+    
+    // 가독성을 위해 대화 텍스트는 깔끔한 흰색 볼드로 통일
+    let textStyle = "color: #ffffff; font-weight: bold;"; 
+
+    // 🎨 도큐먼트 로우 생성 (긴 타자 틀 깨짐 방지 락 포함)[cite: 10]
+    const chatRow = document.createElement('div');
+    chatRow.style.margin = "5px 0";
+    chatRow.style.wordBreak = "break-all"; 
+    chatRow.innerHTML = `<span style="color: ${badgeColor}; font-weight: bold; margin-right: 6px;">${badgeName}</span><span style="${textStyle}">${data.msg}</span>`;
+    
+    // 🚀 진짜 1대1 채팅창 화면에 미련 없이 강제 주입 슛![cite: 10]
+    logBox.appendChild(chatRow);
+    logBox.scrollTop = logBox.scrollHeight; // 스크롤 하단 자동 고정[cite: 10]
+});

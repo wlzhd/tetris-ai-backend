@@ -121,10 +121,14 @@ document.getElementById('btn-ai-start').addEventListener('click', () => {
 function runBotAI() {
     if (!aiGameActive || !botGame.player.matrix) return;
     
+    // 💡 [초핵심] holdType이 null이거나 비어있을 때는 백엔드가 에러 없이 파싱할 수 있도록 
+    // 문자열 "NONE" 또는 유효한 형식을 명시적으로 지정하여 전달합니다!
+    const currentHold = botGame.holdType ? botGame.holdType : "NONE";
+    
     const packet = {
         board: botGame.board,
         currentPiece: botGame.player.type,
-        holdPiece: botGame.holdType,   
+        holdPiece: currentHold,   
         canSwap: botGame.canSwap === undefined ? true : botGame.canSwap 
     };
     
@@ -134,6 +138,7 @@ function runBotAI() {
 aiServerScoket.on("response_ai_decision", (decision) => {
     if (!aiGameActive) return;
     
+    // 1. 🧠 AI가 "지금 블록보다 홀드에 저장된 게 훨씬 이득이야!"라고 판단했다면 홀드 액션 실행!
     if (decision.shouldSwap) {
         botPlayerHoldAction(); 
         return; 
@@ -142,12 +147,19 @@ aiServerScoket.on("response_ai_decision", (decision) => {
     const bestX = decision.bestX;
     const bestRot = decision.bestRot;
     
-    for (let r = 0; r < bestRot; r++) aiRotateMatrix(botGame.player.matrix, 1);
+    // 2. 🛡️ [원본 오염 원천 차단] Next 큐의 원본 매트릭스를 건드리지 않고, 
+    // 새로운 독립 사본 배열을 만들어서 깨끗하게 회전 연산을 적용합니다!
+    let rotatedMatrix = botGame.player.matrix.map(row => [...row]);
+    for (let r = 0; r < bestRot; r++) {
+        aiRotateMatrix(rotatedMatrix, 1);
+    }
+    botGame.player.matrix = rotatedMatrix;
     
+    // 3. 🎯 [오프셋 정밀 보정] 백엔드 그리드 연산 기준에 완벽 매칭되도록 
+    // 가로 폭을 대입하고,Collide 예외 없이 바닥으로 즉시 하드드롭 슛을 날립니다.
     botGame.player.pos.x = bestX;
     botGame.player.pos.y = 0; 
     
-    // 🛡️ 위급 상황 시 무한 루프 프리징 방지용 안전 상향 가드 강화
     let safetyCounter = 0;
     while (aiCollide(botGame.board, botGame.player) && safetyCounter < 15) {
         botGame.player.pos.y--; 
@@ -157,6 +169,7 @@ aiServerScoket.on("response_ai_decision", (decision) => {
     while (!aiCollide(botGame.board, botGame.player)) { botGame.player.pos.y++; }
     botGame.player.pos.y--;
     
+    // 💥 보드판 융합 및 줄 삭제 진행
     botMergeAndSweep();
 });
 
@@ -404,15 +417,36 @@ function botPlayerHoldAction() {
 }
 
 function botDrawHold() {
-    let ctx = botGame.holdCtx; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 80, 80);
-    if (botGame.holdType) {
+    // 💡 [초핵심] 캔버스와 2D 컨텍스트 객체를 명확히 타겟팅합니다.
+    let canvas = botGame.holdCanvas;
+    let ctx = botGame.holdCtx;
+    
+    if (!canvas || !ctx) return;
+
+    // 도화지(검은색 배경) 깨끗하게 밀기
+    ctx.fillStyle = '#000'; 
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // 봇이 홀드한 블록 타입이 존재할 때만 이쁘게 그리기 시작!
+    if (botGame.holdType && SHAPES[botGame.holdType]) {
         const m = SHAPES[botGame.holdType].matrix;
-        m.forEach((row, y) => row.forEach((v, x) => {
-            if (v !== 0) {
-                ctx.fillStyle = SHAPES[botGame.holdType].color;
-                ctx.fillRect(x * 16 + 10, y * 16 + 10, 16, 16);
-            }
-        }));
+        const color = SHAPES[botGame.holdType].color;
+        
+        // 🎨 홀드창 정중앙 정렬을 위한 오프셋 계산 (16픽셀 소형 미노 규격)
+        const offsetX = (canvas.width - m[0].length * 16) / 2 / 16; 
+        const offsetY = (canvas.height - m.length * 16) / 2 / 16;
+        
+        m.forEach((row, y) => {
+            row.forEach((value, x) => {
+                if (value !== 0) {
+                    ctx.fillStyle = color;
+                    ctx.fillRect((x + offsetX) * 16, (y + offsetY) * 16, 16, 16);
+                    ctx.strokeStyle = '#111'; 
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect((x + offsetX) * 16, (y + offsetY) * 16, 16, 16);
+                }
+            });
+        });
     }
 }
 

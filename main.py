@@ -29,18 +29,26 @@ async def connect(sid, environ):
     print(f"✅ 유저 접속 성공! ID: {sid}")
 
 @sio.event
-async def disconnect(sid):
+async def disconnect(sid, reason=None):  # 💡 [초핵심] reason=None 인자를 추가하여 TypeError를 완벽 방어합니다!
     global waiting_player
-    print(f"❌ 유저 접속 종료: {sid}")
+    print(f"❌ 유저 접속 종료: {sid} (사유: {reason})")
+    
     if waiting_player == sid:
         waiting_player = None
     
-    # 만약 게임 중에 탈주했다면 상대방에게 승리 알림
+    # 만약 게임 중에 탈주했다면 상대방에게 승리 알림 및 화면 청소 명령 하달
     for room_id, room in list(rooms.items()):
         if sid in room['players']:
-            opp_id = room['players'][1] if room['players'][0] == sid else room['players'][0]
-            await sio.emit('status', "상대방이 게임을 떠났습니다.", to=opp_id)
-            if room_id in rooms: del rooms[room_id]
+            # players 가 유효한 리스트이고 요소가 존재하는지 엄격히 검증
+            if room['players'] and len(room['players']) >= 2:
+                opp_id = room['players'][1] if room['players'][0] == sid else room['players'][0]
+                
+                # 남은 유저의 프론트엔드에 상대방 그래픽을 리셋하라는 이벤트를 쏩니다!
+                await sio.emit('status', "상대방이 게임을 떠났습니다.", to=opp_id)
+                await sio.emit('opponent_left', {}, to=opp_id)
+            
+            if room_id in rooms: 
+                del rooms[room_id]
 
 # ⚔️ 유저가 '시작하기(1vs1 매칭)' 버튼을 눌렀을 때 작동
 @sio.on('request_match')
@@ -189,7 +197,7 @@ async def handle_ai_request(sid, data):
 @sio.on('create_custom_room')
 async def handle_create_custom_room(sid, data):
     room_id = str(data.get('room_id')).strip()
-    room_name = f"custom_room_{room_id}"  # 💡 프론트엔드의 독립 접두사와 완벽 통일
+    room_name = f"custom_room_{room_id}"
     
     current_rooms = sio.rooms(sid)
     for r in list(current_rooms):
@@ -201,21 +209,33 @@ async def handle_create_custom_room(sid, data):
     rooms[room_name] = { 'players': [sid, None] }
     print(f"[커스텀방 개설] 방장 {sid} -> 방 이름 {room_name}")
 
+# ⚔️ 2. 커스텀 방 참가하기 이벤트 (★재접속 시 방 자폭 버그 완벽 박멸 버전)
+# ⚔️ 2. 커스텀 방 참가하기 이벤트 (★소켓 데이터 유실 완벽 예방 버전)
 @sio.on('join_custom_room')
 async def handle_join_custom_room(sid, data):
     room_id = str(data.get('room_id')).strip()
     room_name = f"custom_room_{room_id}"
     
+    # 🛡️ 방이 실존하는지 먼저 확실하게 체크합니다.
+    if room_name in rooms:
+        # 만약 내가 이미 정식 등록 완료된 유저라면, 소켓방 탈퇴 루프를 완전히 패스하고 즉시 리턴합니다!
+        if rooms[room_name]['players'][0] == sid or rooms[room_name]['players'][1] == sid:
+            print(f"⚠️ [참가 패스] 유저 {sid}는 이미 {room_name}의 핵심 멤버입니다. 데이터 유실을 방지합니다.")
+            await sio.emit('opponent_joined', {'room_id': room_id}, room=room_name)
+            return
+
+    # 내가 완전히 다른 방에 접속을 시도할 때만 기존 방 청소 작동
     current_rooms = sio.rooms(sid)
     for r in list(current_rooms):
         if (r.startswith("room_") or r.startswith("custom_room_")) and r != sid:
-            await sio.leave_room(sid, r)
-            if r in rooms: del rooms[r]
+            if r != room_name:  
+                await sio.leave_room(sid, r)
+                if r in rooms: del rooms[r]
             
     if room_name in rooms:
         rooms[room_name]['players'][1] = sid
         await sio.enter_room(sid, room_name)
-        print(f"[커스텀방 참가] 도전자 {sid} -> 방 이름 {room_name}")
+        print(f"[커스텀방 참가 완료] 도전자 {sid} -> 방 이름 {room_name}")
         await sio.emit('opponent_joined', {'room_id': room_id}, room=room_name)
     else:
         await sio.emit('status', "존재하지 않는 방 코드입니다!", to=sid)
@@ -224,7 +244,7 @@ async def handle_join_custom_room(sid, data):
 @sio.on('start_custom_match')
 async def handle_start_custom_match(sid, data):
     room_id = str(data.get('room_id')).strip()
-    room_name = f"custom_room_{room_id}"
+    room_name = f"custom_room_{room_id}" if not str(data.get('room_id')).startswith("custom_room_") else room_id
     
     if room_name in rooms:
         p1 = rooms[room_name]['players'][0]
@@ -237,35 +257,55 @@ async def handle_start_custom_match(sid, data):
                 return list(bag)
             initial_bags = [gen_bag(), gen_bag()]
             
-            # 📢 동기화 꼬임 방지를 위해 전용 커스텀 매치 스타트 신호로 독립 분사!!
             await sio.emit('match_start_custom', {'roomId': room_name, 'role': 'p1', 'initialBags': initial_bags}, to=p1)
             await sio.emit('match_start_custom', {'roomId': room_name, 'role': 'p2', 'initialBags': initial_bags}, to=p2)
             print(f"🚀 [배틀 시작] 독립 세션 {room_name} 런칭!")
 
-# 🔄 4. [다시시작] 버튼을 눌렀을 때 리턴매치 트리거 (★핵심 교정)
+# 🔄 4. [다시시작] 버튼을 눌렀을 때 리턴매치 트리거 (방 자동 유지 메커니즘)
 @sio.on('request_rematch')
 async def handle_request_rematch(sid, data):
-    room_id = str(data.get('room_id')).strip()
-    room_name = f"custom_room_{room_id}"
+    raw_room_id = str(data.get('room_id')).strip()
+    room_name = raw_room_id if raw_room_id.startswith("custom_room_") else f"custom_room_{raw_room_id}"
     
+    if not room_name in rooms:
+        for r_key in list(rooms.keys()):
+            if sid in rooms[r_key]['players']:
+                room_name = r_key
+                break
+
     if room_name in rooms:
         p1 = rooms[room_name]['players'][0]
         p2 = rooms[room_name]['players'][1]
         
-        # 화면 초기화 신호 송출
-        await sio.emit('rematch_triggered', {'status': 'restart'}, room=room_name)
-        
-        # 다음 판을 위한 신규 블록셋 생성
-        def gen_bag():
-            bag = ['I', 'O', 'T', 'L', 'J', 'S', 'Z']
-            np.random.shuffle(bag)
-            return list(bag)
-        initial_bags = [gen_bag(), gen_bag()]
-        
-        # 📢 리턴매치 시작 시 전용 커스텀 매치 스타트 신호 송출로 버튼 숨김 레이어 작동!!
-        await sio.emit('match_start_custom', {'roomId': room_name, 'role': 'p1', 'initialBags': initial_bags}, to=p1)
-        await sio.emit('match_start_custom', {'roomId': room_name, 'role': 'p2', 'initialBags': initial_bags}, to=p2)
-        print(f"🔄 [리턴매치 가동] 독립 세션 {room_name} 깨끗하게 초기화 후 재가동 완료!")
+        if p1 and p2:
+            # 📢 방을 파괴하지 않고 무조건 동시 시작 명령을 하달합니다!
+            await sio.emit('rematch_triggered', {'status': 'restart'}, room=room_name)
+            
+            def gen_bag():
+                bag = ['I', 'O', 'T', 'L', 'J', 'S', 'Z']
+                np.random.shuffle(bag)
+                return list(bag)
+            initial_bags = [gen_bag(), gen_bag()]
+            
+            await sio.emit('match_start_custom', {'roomId': room_name, 'role': 'p1', 'initialBags': initial_bags}, to=p1)
+            await sio.emit('match_start_custom', {'roomId': room_name, 'role': 'p2', 'initialBags': initial_bags}, to=p2)
+            print(f"🔄 [리턴매치 가동] 세션 {room_name} 동기화 재시작 완료!")
+
+# 💬 5. [우측 완와이드 통합] 실시간 테트리스 룸 단위 채팅 중계 가동부
+@sio.on('send_room_chat')
+async def handle_room_chat(sid, data):
+    room_id = data.get('roomId')
+    role = data.get('role', 'p2')
+    msg = str(data.get('msg', '')).strip()
+    
+    if not room_id:
+        return
+
+    # 💡 [초핵심 패치] room_ id가 빠른 매칭 규격(room_)이든, 커스텀 규격(custom_room_)이든
+    # 실시간 배틀 룸 주소 형태를 띠고 있다면 조건문을 100% 프리패스하여 양쪽에 브로드캐스팅합니다!
+    if room_id.startswith("room_") or room_id.startswith("custom_room_") or room_id in rooms:
+        await sio.emit('receive_room_chat', {'role': role, 'msg': msg}, room=room_id)
+        print(f"💬 [채팅 중계] 채널: {room_id} ➔ {role}: {msg}")
 
 # ----------------------------------------------------------------------
 # 🚀 [가동부 환경 파싱 및 포트 트리거]
