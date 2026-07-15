@@ -7,9 +7,9 @@
     
     <script src="https://unpkg.com/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
 
-<!--<script defer src="./socket.io.min.js"></script>-->
-    <script defer src="./aaa.js"></script>
+<script defer src="./aaa.js"></script>
     <script defer src="./ai.js"></script>
+    <script defer src="./marathon.js"></script>
     <style>
         /* 🎨 글로벌 레이아웃 설정 */
         body {
@@ -100,6 +100,7 @@
         <h1>JIKONG TRIS</h1>
         <button class="header-tab active" id="tab-pvp" onclick="switchMode('pvp')">⚔️ 1대1 대전 방</button>
         <button class="header-tab" id="tab-ai" onclick="switchMode('ai')">🤖 지능형 봇전 대전</button>
+        <button class="header-tab" id="tab-marathon" onclick="switchMode('marathon')">🏆 클래식 마라톤</button>
     </div>
 
     <div id="main-container">
@@ -113,8 +114,6 @@
             </div>
             
             <div id="btn-container" style="display: flex; flex-direction: column; align-items: center; gap: 15px; margin: 10px 0; width: 100%; min-height: 90px; justify-content: center;">
-                
-            <!--<div style="min-height: 45px; display: flex; align-items: center; justify-content: center; text-align: center; width: 100%;"></div>-->
 
                 <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; width: 100%; max-width: 600px;">
                     <button class="menu-btn" id="btn-create-room" onclick="createCustomRoom()" style="background: #9b59b6; border-color: #8e44ad; color: white; white-space: nowrap;">방 만들기 🏠</button>
@@ -260,6 +259,54 @@
             </div>
         </div>
 
+        <div id="view-marathon" class="game-mode-view">
+            <h1>🏆 CLASSIC MARATHON (무한 속도 모드)</h1>
+            <div class="status-msg" id="marathon-status-msg" style="color: #f1c40f;">레벨이 오를수록 중력이 무자비해집니다!</div>
+            
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <button class="menu-btn" id="btn-marathon-start" style="background: #f1c40f; color:#000; border-color:#f1c40f;">🏆 마라톤 시작</button>
+            </div>
+            
+            <div id="game-layout">
+                <div class="player-section" style="border-color: #f1c40f;">
+                    <div style="font-size:16px; font-weight:bold; margin-bottom:10px; color:#f1c40f;">MARATHON RUNNER</div>
+                    <div class="game-area">
+                        <div class="side-panel">
+                            <div class="side-box"><h2>HOLD</h2><canvas id="marathon-hold" class="minicanvas" width="80" height="80"></canvas></div>
+                            <div class="side-box"><h2>LEVEL</h2><div id="marathon-level-val" class="score-val" style="color: #f1c40f;">1</div></div>
+                            <div class="side-box"><h2>SCORE</h2><div id="marathon-score-val" class="score-val" style="color: #2ecc71;">0</div></div>
+                        </div>
+                        
+                        <div class="attack-gauge-container" style="border-color: #f1c40f;">
+                            <div id="marathon-level-gauge" class="attack-gauge-fill" style="background: #f1c40f; box-shadow: 0 0 8px #f1c40f;"></div>
+                        </div>
+
+                        <canvas id="marathon-tetris" class="game-board" width="240" height="480" style="border-color: #f1c40f;"></canvas>
+                        
+                        <div class="side-panel">
+                            <div class="side-box"><h2>NEXT</h2><canvas id="marathon-next" class="minicanvas" width="80" height="240"></canvas></div>
+                            <div class="side-box"><h2>LINES</h2><div id="marathon-lines-val" class="score-val" style="color: #3498db;">0</div></div>
+                            <div class="side-box" style="width: 100px; padding: 8px;">
+                                <h2>SETTINGS</h2>
+                                <div class="settings-group">
+                                    <div class="settings-item">
+                                        <label>반응속도(ARR)</label>
+                                        <input type="range" id="marathon-setting-arr" min="0" max="100" step="5" value="35">
+                                        <div class="settings-value"><span id="marathon-val-arr">35</span> ms</div>
+                                    </div>
+                                    <div class="settings-item">
+                                        <label>소프트드롭</label>
+                                        <input type="range" id="marathon-setting-softdrop" min="0" max="100" step="5" value="25">
+                                        <div class="settings-value"><span id="marathon-val-softdrop">25</span> ms</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div id="info">
             <b>조작키:</b> 좌우 방향키 (이동) | <b>Z 키:</b> 반시계 회전 | <b>X 키 / ↑ 화살표:</b> 시계 회전<br>
             아래 방향키 (소프트드롭) | <b>스페이스바:</b> 하드드롭 | <b>C 키:</b> 블록 보관(Hold)
@@ -279,18 +326,20 @@
             } else if (mode === 'ai') {
                 document.getElementById('tab-ai').classList.add('active');
                 document.getElementById('view-ai').classList.add('active');
+            } else if (mode === 'marathon') {
+                document.getElementById('tab-marathon').classList.add('active');
+                document.getElementById('view-marathon').classList.add('active');
+                // 마라톤 탭 진입 시 기존 멀티 연동 게임 루프 정지 유도
+                if (typeof gameActive !== 'undefined') gameActive = false;
+                if (typeof aiGameActive !== 'undefined') aiGameActive = false;
             }
         }
 
         // 난이도 버튼 토글 핸들러
         function setBotDifficulty(diff, element) {
             currentBotDifficulty = diff;
-            
-            // 다른 난이도 버튼들의 selected 하이라이트 클래스 제거
             document.querySelectorAll('.ai-btn-group .menu-btn').forEach(btn => btn.classList.remove('selected'));
             element.classList.add('selected');
-            
-            // 봇 라벨 텍스트 변경
             const labelMap = { 'easy': 'BOT (Easy)', 'normal': 'BOT (Normal)', 'hard': 'BOT (Hard)' };
             document.getElementById('bot-title-text').innerText = labelMap[diff];
             document.getElementById('ai-status-msg').innerText = `${labelMap[diff]} 모드가 선택되었습니다. 대전 시작을 눌러주세요!`;
