@@ -1,6 +1,4 @@
 // aaa.js
-// const socket = io("http://localhost:3000");
-// const socket = io("http://192.168.0.40:3000");
 console.log(window.location.origin);
 const socket = io(window.location.origin);
 
@@ -9,6 +7,9 @@ let myRole = null;
 let gameActive = false;
 let isSoloMode = false;
 let myComboCount = -1;
+
+let lastActionWasRotate = false; // 💡 T-Spin 검증용: 마지막 행동이 회전이었는가?
+let myBackToBackActive = false;  // 💡 B2B 연속 보너스 플래그
 
 const keys = {};
 
@@ -43,18 +44,32 @@ const SHAPES = {
 const COLORS = [null, '#00f0f0', '#f0f000', '#a000f0', '#f0a000', '#0000f0', '#00f0f0', '#f00000', '#555555'];
 const SHAPE_TYPES = ['I', 'O', 'T', 'L', 'J', 'S', 'Z'];
 
-const WK_TESTS_90 = [
-    {dx: 0, dy: 0},   
-    {dx: -1, dy: 0},  
-    {dx: 1, dy: 0},   
-    {dx: 0, dy: 1},   
-    {dx: -1, dy: 1},  
-    {dx: 1, dy: 1},   
-    {dx: 0, dy: -1},  
-    {dx: -2, dy: 0},  
-    {dx: 2, dy: 0}    
-];
-const WK_TESTS_180 = [{dx:0,dy:0}, {dx:0,dy:1}, {dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:-1}];
+// ==========================================================================
+// 🔄 [글로벌 표준 사양] 공식 SRS (Super Rotation System) 킥 데이터 엔진
+// ==========================================================================
+// T, L, J, S, Z 일반 미노용 표준 5단계 킥 매핑 데이터 테이블
+const SRS_KICK_DATA = {
+    '0->1': [{x:0, y:0}, {x:-1, y:0}, {x:-1, y:-1}, {x:0, y:2}, {x:-1, y:2}],
+    '1->0': [{x:0, y:0}, {x:1, y:0}, {x:1, y:1}, {x:0, y:-2}, {x:1, y:-2}],
+    '1->2': [{x:0, y:0}, {x:1, y:0}, {x:1, y:1}, {x:0, y:-2}, {x:1, y:-2}],
+    '2->1': [{x:0, y:0}, {x:-1, y:0}, {x:-1, y:-1}, {x:0, y:2}, {x:-1, y:2}],
+    '2->3': [{x:0, y:0}, {x:1, y:0}, {x:1, y:-1}, {x:0, y:2}, {x:1, y:2}],
+    '3->2': [{x:0, y:0}, {x:-1, y:0}, {x:-1, y:1}, {x:0, y:-2}, {x:-1, y:-2}],
+    '3->0': [{x:0, y:0}, {x:-1, y:0}, {x:-1, y:1}, {x:0, y:-2}, {x:-1, y:-2}],
+    '0->3': [{x:0, y:0}, {x:1, y:0}, {x:1, y:-1}, {x:0, y:2}, {x:1, y:2}]
+};
+
+// 💡 [초핵심 패치] 누락되었던 일자(I) 블록 전용 독자 SRS 벽차기 오프셋 테이블 완벽 탑재!
+const SRS_I_KICK_DATA = {
+    '0->1': [{x:0, y:0}, {x:-2, y:0}, {x:1, y:0}, {x:-2, y:1}, {x:1, y:-2}],
+    '1->0': [{x:0, y:0}, {x:2, y:0}, {x:-1, y:0}, {x:2, y:-1}, {x:-1, y:2}],
+    '1->2': [{x:0, y:0}, {x:-1, y:0}, {x:2, y:0}, {x:-1, y:-2}, {x:2, y:1}],
+    '2->1': [{x:0, y:0}, {x:1, y:0}, {x:-2, y:0}, {x:1, y:2}, {x:-2, y:-1}],
+    '2->3': [{x:0, y:0}, {x:2, y:0}, {x:-1, y:0}, {x:2, y:-1}, {x:-1, y:2}],
+    '3->2': [{x:0, y:0}, {x:-2, y:0}, {x:1, y:0}, {x:-2, y:1}, {x:1, y:-2}],
+    '3->0': [{x:0, y:0}, {x:1, y:0}, {x:-2, y:0}, {x:1, y:2}, {x:-2, y:-1}],
+    '0->3': [{x:0, y:0}, {x:-1, y:0}, {x:2, y:0}, {x:-1, y:-2}, {x:2, y:1}]
+};
 
 // 🧩 7-Bag 랜덤 블록 매트릭스 생성기
 function generateSharedBag() {
@@ -110,13 +125,18 @@ document.getElementById('setting-softdrop').addEventListener('input', (e) => {
     document.getElementById('val-softdrop').innerText = val;
 });
 
+// 🔄 블록 소환 및 회전 차수(Facing) 완벽 초기화 리셋 엔진
 function myPlayerReset() {
     if (myGame.nextQueue.length < 7) {
         myGame.nextQueue.push(...generateSharedBag());
     }
+    
     myGame.player.matrix = myGame.nextQueue.shift();
     myGame.player.type = getPieceType(myGame.player.matrix); 
     myGame.player.color = SHAPES[myGame.player.type] ? SHAPES[myGame.player.type].color : '#fff';
+    
+    // 💡 [초핵심] 새 블록이 하늘에서 등장할 때는 무조건 회전 방향을 0(정방향)으로 완벽 세척 고정합니다!
+    myGame.player.currentFacing = 0; 
     
     myGame.player.pos.y = 0;
     
@@ -132,12 +152,15 @@ function myPlayerReset() {
         if (collide(myGame.board, myGame.player)) {
             myGame.player.pos.y--;
             if (collide(myGame.board, myGame.player)) {
-                if (sprintTimerInterval) clearInterval(sprintTimerInterval); // 게임오버 시에도 타이머 스톱
+                if (sprintTimerInterval) clearInterval(sprintTimerInterval); 
 
-                showControlButtonsAgain();
-
-                alert("💥 블록 소환 불가로 인한 GAME OVER 💥");
-                gameActive = false;
+                if (!isSoloMode && roomId) {
+                    socket.emit('game_over_event', { roomId: roomId });
+                } else {
+                    showControlButtonsAgain();
+                    alert("💥 블록 소환 불가로 인한 GAME OVER 💥");
+                    gameActive = false;
+                }
                 return;
             }
         }
@@ -147,16 +170,24 @@ function myPlayerReset() {
     sendGameSync();
 }
 
+// 🔄 매트릭스 내부 블록 고유 번호로 타입을 100% 탐지해내는 고정밀 판정 엔진
 function getPieceType(matrix) {
     if (!matrix) return 'I';
-    if (matrix.length === 2) return 'O';
     if (matrix.length === 4) return 'I';
-    const str = JSON.stringify(matrix);
-    if (str.includes('[0,3,0]') || matrix[1][1] === 3) return 'T';
-    if (str.includes('[0,0,4]') || matrix[0][2] === 4) return 'L';
-    if (str.includes('[5,0,0]') || matrix[0][0] === 5) return 'J';
-    if (str.includes('[0,6,6]') || matrix[0][1] === 6) return 'S';
-    if (str.includes('[7,7,0]') || matrix[0][0] === 7) return 'Z';
+    if (matrix.length === 2) return 'O';
+    
+    for (let y = 0; y < matrix.length; y++) {
+        for (let x = 0; x < matrix[y].length; x++) {
+            let val = matrix[y][x];
+            if (val === 1) return 'I';
+            if (val === 2) return 'O';
+            if (val === 3) return 'T';
+            if (val === 4) return 'L';
+            if (val === 5) return 'J';
+            if (val === 6) return 'S';
+            if (val === 7) return 'Z';
+        }
+    }
     return 'T';
 }
 
@@ -179,7 +210,7 @@ function myPlayerMove(dir) {
     if (!gameActive) return;
     myGame.player.pos.x += dir;
     if (collide(myGame.board, myGame.player)) myGame.player.pos.x -= dir;
-    else { myGame.lockDelayTimer = 0; sendGameSync(); }
+    else { myGame.lockDelayTimer = 0; lastActionWasRotate = false; sendGameSync(); }
 }
 
 function myPlayerDrop() {
@@ -190,37 +221,127 @@ function myPlayerDrop() {
         return false;
     }
     myGame.lockDelayTimer = 0;
+    lastActionWasRotate = false;
     sendGameSync();
     return true;
 }
 
-function rotateMatrix(matrix, dir) {
-    for (let y = 0; y < matrix.length; ++y) {
-        for (let x = 0; x < y; ++x) [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
+function getRotatedMatrix(matrix, dir) {
+    if (!matrix) return null;
+    let n = matrix.length;
+    // 원본 데이터 오염 방지를 위해 깊은 사본(Deep Copy) 생성
+    let temp = matrix.map(row => [...row]);
+    
+    // 💡 [초핵심 개혁] 180도 회전(dir === 2)은 전치 연산을 거치면 축이 파괴됩니다!
+    // 따라서 90도 회전(시계/반시계)일 때만 행과 열을 뒤바꾸는 전치 연산을 가동합니다.
+    if (dir === 1 || dir === -1) {
+        for (let y = 0; y < n; ++y) {
+            for (let x = 0; x < y; ++x) {
+                [temp[x][y], temp[y][x]] = [temp[y][x], temp[x][y]];
+            }
+        }
     }
-    if (dir === 1) matrix.forEach(row => row.reverse());
-    else matrix.reverse();
+    
+    // 🎨 회전 방향 차수에 따른 최종 대칭 매핑
+    if (dir === 1) {
+        temp.forEach(row => row.reverse()); // 시계 90도 (X 키, ↑ 화살표)
+    } else if (dir === -1) {
+        temp.reverse();                     // 반시계 90도 (Z 키)
+    } else if (dir === 2) {
+        // ✨ 순정 180도 점대칭 공식: 전치 없이 배열 전체 상하 반전 후 모든 행 좌우 반전!
+        temp.reverse(); 
+        temp.forEach(row => row.reverse()); // 180도 회전 (A 키)
+    }
+    return temp;
 }
 
+// 🎯 [벽면 굳음 및 I블록 먹통 완벽 해결] 시뮬레이션 기반 통합 SRS 회전 컨트롤러
 function myPlayerRotate(dir) {
     if (!gameActive || !myGame.player.matrix) return;
-    const origX = myGame.player.pos.x; const origY = myGame.player.pos.y;
-    if (dir === 1) rotateMatrix(myGame.player.matrix, 1);
-    else if (dir === -1) rotateMatrix(myGame.player.matrix, -1);
-    else if (dir === 2) { rotateMatrix(myGame.player.matrix, 1); rotateMatrix(myGame.player.matrix, 1); }
 
-    const tests = (dir === 2) ? WK_TESTS_180 : WK_TESTS_90;
-    let success = false;
-    for (let test of tests) {
-        myGame.player.pos.x = origX + test.dx; myGame.player.pos.y = origY + test.dy;
-        if (!collide(myGame.board, myGame.player)) { success = true; myGame.lockDelayTimer = 0; break; }
+    const origX = myGame.player.pos.x;
+    const origY = myGame.player.pos.y;
+    const origMat = myGame.player.matrix;
+    const pieceType = myGame.player.type;
+
+    if (pieceType === 'O') {
+        lastActionWasRotate = true;
+        sendGameSync();
+        return;
     }
-    if (!success) {
-        myGame.player.pos.x = origX; myGame.player.pos.y = origY;
-        if (dir === 1) rotateMatrix(myGame.player.matrix, -1);
-        else if (dir === -1) rotateMatrix(myGame.player.matrix, 1);
-        else if (dir === 2) { rotateMatrix(myGame.player.matrix, 1); rotateMatrix(myGame.player.matrix, 1); }
-    } else { sendGameSync(); }
+
+    // 1. 현재 회전 상태 추적 (undefined 일 시 0)
+    let currentFacing = myGame.player.currentFacing !== undefined ? myGame.player.currentFacing : 0;
+
+    // 2. 입력 키(dir)에 따른 다음 회전 타겟 계산 (0:상, 1:우, 2:하, 3:좌)
+    let nextFacing = currentFacing;
+    if (dir === 1) nextFacing = (currentFacing + 1) % 4;        // 시계 (X, ↑ 화살표)
+    else if (dir === -1) nextFacing = (currentFacing + 3) % 4;   // 반시계 (Z)
+    else if (dir === 2) nextFacing = (currentFacing + 2) % 4;    // 180도 (A)
+
+    // 3. 가상 회전 복사본 생성
+    const nextMatrix = getRotatedMatrix(origMat, dir);
+
+    // 선 충돌 제거: 오직 회전 후 사본 미노 상태만 가지고 목적지 최종 검증
+    let testPlayer = {
+        pos: { x: origX, y: origY },
+        matrix: nextMatrix
+    };
+
+    // 4. 블록 유형에 맞춰 킥 딕셔너리 조준
+    const kickKey = `${currentFacing}->${nextFacing}`;
+    const kicks = (pieceType === 'I') ? (SRS_I_KICK_DATA[kickKey] || [{x:0, y:0}]) : (SRS_KICK_DATA[kickKey] || [{x: 0, y: 0}]);
+
+    let success = false;
+    for (let kick of kicks) {
+        // 💡 [초핵심 정밀 보정 1] 왼쪽 TST('3->0')나 반대 방향 킥일 때 
+        // 가로축(X)이 벽이나 지형에 막히지 않고 반대편 빈 공간으로 유연하게 탈출하도록 
+        // 1차적으로 기본 오프셋을 부드럽게 대입합니다.
+        testPlayer.pos.x = origX + kick.x;
+        testPlayer.pos.y = origY + kick.y; 
+
+        if (!collide(myGame.board, testPlayer)) {
+            success = true;
+            break;
+        }
+
+        // 💡 [초핵심 정밀 보정 2] 왼쪽 벽면 마찰 꼬임 해결 가드
+        // 만약 대칭축 에러로 충돌했다면, X축을 강제로 반전(-kick.x)시켜 
+        // 블록을 벽 안쪽이 아닌 오른쪽 빈틈으로 밀어 넣으며 아래로 관통시킵니다!
+        testPlayer.pos.x = origX - kick.x;
+        testPlayer.pos.y = origY + kick.y; 
+
+        if (!collide(myGame.board, testPlayer)) {
+            success = true;
+            break;
+        }
+
+        // 💡 [초핵심 정밀 보정 3] 위로 튕김 방지 가드 
+        testPlayer.pos.x = origX + kick.x;
+        testPlayer.pos.y = origY - kick.y; 
+        if (testPlayer.pos.y >= origY) { // 오직 아래쪽이거나 제자리일 때만 승인!
+            if (!collide(myGame.board, testPlayer)) {
+                success = true;
+                break;
+            }
+        }
+    }
+
+    // 5. 시뮬레이션 최종 대성공 시에만 유저 실제 조각 데이터 변형 최종 승인!
+    if (success) {
+        myGame.player.matrix = nextMatrix;
+        myGame.player.pos.x = testPlayer.pos.x;
+        myGame.player.pos.y = testPlayer.pos.y;
+        myGame.player.currentFacing = nextFacing; // 현재 회전 상태 갱신
+        myGame.lockDelayTimer = 0;
+        lastActionWasRotate = true; // T-Spin 판정 추적 활성화
+        sendGameSync();
+    } else {
+        // 모든 필터 실패 시 안전 보존
+        myGame.player.pos.x = origX;
+        myGame.player.pos.y = origY;
+        myGame.player.matrix = origMat;
+    }
 }
 
 function myPlayerHold() {
@@ -236,6 +357,7 @@ function myPlayerHold() {
         myGame.player.pos.y = 0; myGame.player.pos.x = Math.floor((myGame.board[0].length - myGame.player.matrix[0].length) / 2);
     }
     myGame.canSwap = false;
+    lastActionWasRotate = false;
     drawHold(myGame.holdCtx, myGame.holdCanvas, myGame.holdType);
     sendGameSync();
 }
@@ -272,7 +394,6 @@ function sendGameSync() {
 function resetAllBoardStates() {
     if (sprintTimerInterval) clearInterval(sprintTimerInterval);
     
-    // 1. 내 보드판 데이터 완전 청소
     myGame.board = Array.from({length: 20}, () => Array(10).fill(0));
     myGame.score = 0; 
     if (myGame.scoreElement) myGame.scoreElement.innerText = 0; 
@@ -280,7 +401,6 @@ function resetAllBoardStates() {
     myGame.pendingAttacks = 0; myComboCount = -1;
     updateAttackGauge(myGame.gaugeElement, 0);
     
-    // 2. 상대방 보드판 데이터 완전 청소
     oppGame.board = Array.from({length: 20}, () => Array(10).fill(0));
     oppGame.score = 0; 
     if (oppGame.scoreElement) oppGame.scoreElement.innerText = 0;
@@ -289,12 +409,13 @@ function resetAllBoardStates() {
     oppGame.pendingAttacks = 0;
     updateAttackGauge(oppGame.gaugeElement, 0);
 
-    // 미니 캔버스들 청소
     drawHold(myGame.holdCtx, myGame.holdCanvas, null);
     drawHold(oppGame.holdCtx, oppGame.holdCanvas, null);
 
-    // 🚫 [철저 방어] 원래 있던 roomId = null; 과 myRole = null; 구문을 의도적으로 제거했습니다!
-    // 이 함수가 실행되어도 방 코드 메모리는 철통같이 보호됩니다.
+    const logBox = document.getElementById('chat-log-box');
+    if (logBox) {
+        logBox.innerHTML = `<div style="color: #666; font-style: italic; text-align: center; font-size: 11px; margin-top: 180px;">[ 대기실 / 인게임 통합 채팅 채널 ]</div>`;
+    }
 }
 
 function updateNextPreview() {
@@ -302,7 +423,6 @@ function updateNextPreview() {
     drawNext(myGame.nextCtx, myGame.nextCanvas, types);
 }
 
-// 💡 [타이머 실시간 출력 유틸 함수]
 function startSprintRealtimeTimer() {
     if (sprintTimerInterval) clearInterval(sprintTimerInterval);
     
@@ -311,18 +431,20 @@ function startSprintRealtimeTimer() {
         const now = performance.now();
         const currentSec = ((now - sprintStartTime) / 1000).toFixed(2);
         document.getElementById('status-msg').innerText = `⏱️ 스프린트 진행 중 | 시간: ${currentSec}s | 줄: ${sprintLinesCleared} / ${SPRINT_TARGET_LINES}`;
-    }, 30); // 약 30ms 간격으로 소수점 2자리 갱신 루프 활성화
+    }, 30); 
 }
 
 document.getElementById('btn-start').addEventListener('click', () => {
     resetAllBoardStates();
     isSoloMode = false;
     
-    // 🛡️ [추가] 빠른 매칭을 탈 때는 예전 커스텀 방 잔상을 완전히 지워버려 채팅 채널 꼬임을 원천 차단합니다!
     customRoomNum = null; 
     customRoomRole = null;
     roomId = null;
     myRole = null;
+
+    const roomDisplay = document.getElementById('custom-room-display');
+    if (roomDisplay) roomDisplay.innerHTML = "";
 
     document.getElementById('opp-section').style.opacity = "0.3";
     document.getElementById('status-msg').innerText = "상대 플레이어를 검색 중입니다...";
@@ -330,14 +452,11 @@ document.getElementById('btn-start').addEventListener('click', () => {
 });
 
 document.getElementById('btn-solo').addEventListener('click', () => {
-    // 💡 기존 방 정보 임시 백업
     const savedRoomId = roomId;
     const savedMyRole = myRole;
 
-    // 보드판 도화지 청소 (이제 내부에서 roomId를 지우지 않습니다!)
     resetAllBoardStates();
     
-    // 안전하게 방 데이터 유지
     roomId = savedRoomId;
     myRole = savedMyRole;
     
@@ -346,14 +465,12 @@ document.getElementById('btn-solo').addEventListener('click', () => {
     sprintLinesCleared = 0;
     sprintStartTime = performance.now(); 
     
-    // 상대방 화면 반투명 처리
     document.getElementById('opp-section').style.opacity = "0.1";
     
     myGame.nextQueue = [...generateSharedBag(), ...generateSharedBag()];
     myPlayerReset();
     startSprintRealtimeTimer(); 
 
-    // 🏠 상단 안내 메시지에 방 코드 박제
     if (savedRoomId) {
         const pureNum = savedRoomId.replace("room_", "");
         document.getElementById('status-msg').innerHTML = 
@@ -364,29 +481,20 @@ document.getElementById('btn-solo').addEventListener('click', () => {
     }
 });
 
-// 🔄 방에서 [다시시작] 버튼을 눌렀을 때 실행되는 재경기 요청 함수
 if (document.getElementById('btn-restart')) {
     document.getElementById('btn-restart').onclick = function() {
-        // 만약 지금 방 코드가 존재하는 '멀티플레이 방' 상태라면?
         if (typeof roomId !== 'undefined' && roomId) {
             document.getElementById('status-msg').innerHTML = `🔄 상대방에게 재대결 요청을 보내는 중...`;
-            // 서버로 재대결 요청 신호를 보냅니다.
             socket.emit('request_rematch', { room_id: roomId, role: myRole });
         } else {
-            // 방 코드가 없다면 기존 연습모드(혼자하기) 다시시작 로직 실행
             if (typeof resetGame === 'function') resetGame(); 
         }
     };
 }
 
-// 🔔 서버로부터 "상대가 재경기를 원한다"는 신호를 받았을 때 화면 처리
 socket.on('rematch_triggered', function(data) {
     document.getElementById('status-msg').innerHTML = `⚔️ <span style="color: #e74c3c; font-weight:bold;">리턴 매치 성사!</span> 곧 다음 판이 시작됩니다!`;
-    
-    // 🎮 기존 aaa.js에 있는 전체 보드 초기화 함수 실행
     resetAllBoardStates();
-    
-    // 멀티플레이어 환경이므로 연습모드(isSoloMode) 해제 후 섹션 불빛 복구
     isSoloMode = false;
     document.getElementById('opp-section').style.opacity = "1.0";
     gameActive = true;
@@ -411,23 +519,16 @@ socket.on('opponent_sync', (data) => {
 });
 
 socket.on('status', (msg) => { 
-    // 💡 [초핵심] 내가 커스텀 방 모드(customRoomNum이 존재할 때)일 때는 
-    // 연타나 비동기 에러로 인해 날아오는 공용 텍스트 오염을 철저히 씹어버립니다!
     if (customRoomNum) {
         console.log("⚠️ 커스텀 방 모드 활성화 중이므로 공용 status 메시지를 무시합니다:", msg);
         return; 
     }
-    
-    // 일반 빠른매칭 모드일 때만 정상 작동
     if(!isSoloMode) document.getElementById('status-msg').innerText = msg; 
 });
 
-// 🔔 빠른 매칭 성공 수신부 구역 수리
 socket.on('match_start', (data) => {
-    // 시작 신호가 오면 무조건 도화지 세척
     resetAllBoardStates();
 
-    // 🛡️ [추가] 빠른 매칭 전용 룸 컨텍스트 순정 보존 작업
     customRoomNum = null;
     customRoomRole = null;
 
@@ -579,27 +680,70 @@ function applyPendingAttacks() {
     if (displacedRows.some(row => row.some(val => val !== 0))) {
         if (sprintTimerInterval) clearInterval(sprintTimerInterval);
         
-        // 🚨여기에 한 줄을 추가하여 버튼들을 다시 부활시켜 줍니다!
-        showControlButtonsAgain();
-
-        alert("💥 쓰레기 블록 폭격으로 인한 GAME OVER 💥");
-        gameActive = false; return;
-    }
+        if (!isSoloMode && roomId) {
+            socket.emit('game_over_event', { roomId: roomId });
+        } else {
+            showControlButtonsAgain();
+            alert("💥 쓰레기 블록 폭격으로 인한 GAME OVER 💥");
+            gameActive = false; 
+        }
+    return;
+}
     sendGameSync(); 
 }
 
 function mergeAndSweep() {
     let isTSpin = false;
-    if (myGame.player.type === 'T') {
-        const cx = myGame.player.pos.x + 1; const cy = myGame.player.pos.y + 1; 
-        const corners = [{dx: -1, dy: -1}, {dx: 1, dy: -1}, {dx: -1, dy: 1}, {dx: 1, dy: 1}];
+    let isTSpinMini = false;
+
+    if (myGame.player.type === 'T' && lastActionWasRotate) {
+        const px = myGame.player.pos.x;
+        const py = myGame.player.pos.y;
+        
+        const cx = px + 1;
+        const cy = py + 1;
+
+        const corners = [
+            {x: cx - 1, y: cy - 1}, 
+            {x: cx + 1, y: cy - 1}, 
+            {x: cx - 1, y: cy + 1}, 
+            {x: cx + 1, y: cy + 1}  
+        ];
+
         let occupiedCount = 0;
         corners.forEach(c => {
-            const targetX = cx + c.dx; const targetY = cy + c.dy;
-            if (targetX < 0 || targetX >= 10 || targetY >= 20) { occupiedCount++; } 
-            else if (targetY >= 0 && myGame.board[targetY][targetX] !== 0) { occupiedCount++; }
+            if (c.x < 0 || c.x >= 10 || c.y >= 20) { occupiedCount++; }
+            else if (c.y >= 0 && myGame.board[c.y][c.x] !== 0) { occupiedCount++; }
         });
-        if (occupiedCount >= 3) isTSpin = true;
+
+        if (occupiedCount >= 3) {
+            const mat = myGame.player.matrix;
+            let facing = 0; 
+            if (mat[0][1] !== 0) facing = 0;
+            else if (mat[1][2] !== 0) facing = 1;
+            else if (mat[2][1] !== 0) facing = 2;
+            else if (mat[1][0] !== 0) facing = 3;
+
+            let faceCorners = [];
+            if (facing === 0) faceCorners = [0, 1];      
+            else if (facing === 1) faceCorners = [1, 3]; 
+            else if (facing === 2) faceCorners = [2, 3]; 
+            else if (facing === 3) faceCorners = [0, 2]; 
+
+            let faceOccupied = 0;
+            faceCorners.forEach(idx => {
+                const c = corners[idx];
+                if (c.x < 0 || c.x >= 10 || c.y >= 20) { faceOccupied++; }
+                else if (c.y >= 0 && myGame.board[c.y][c.x] !== 0) { faceOccupied++; }
+            });
+
+            if (faceOccupied === 2) {
+                isTSpin = true;
+            } else {
+                isTSpin = true;
+                isTSpinMini = true;
+            }
+        }
     }
 
     myGame.player.matrix.forEach((row, y) => {
@@ -621,31 +765,58 @@ function mergeAndSweep() {
     if (rowsCleared > 0) { myComboCount++; } else { myComboCount = -1; }
 
     let myPower = 0;
-    if (rowsCleared === 2) myPower = 1;
-    else if (rowsCleared === 3) myPower = 2;
-    else if (rowsCleared === 4) myPower = 4; 
+    let technicalName = "";
 
     if (isTSpin) {
-        if (rowsCleared === 1) myPower = 2;
-        else if (rowsCleared === 2) myPower = 5;
-        else if (rowsCleared === 3) myPower = 7;
+        if (rowsCleared === 0) { myPower = 0; technicalName = "T-Spin Status"; }
+        else if (rowsCleared === 1) { myPower = isTSpinMini ? 0 : 2; technicalName = isTSpinMini ? "T-Spin Mini Single" : "T-Spin Single"; }
+        else if (rowsCleared === 2) { myPower = 4; technicalName = "T-Spin Double"; }
+        else if (rowsCleared === 3) { myPower = 6; technicalName = "🔥 T-Spin Triple 🔥"; } 
+    } else {
+        if (rowsCleared === 1) myPower = 0;
+        else if (rowsCleared === 2) myPower = 1;
+        else if (rowsCleared === 3) myPower = 2;
+        else if (rowsCleared === 4) { myPower = 4; technicalName = "⚡ TETRIS ⚡"; }
     }
-    if (rowsCleared > 0 && myComboCount > 0) myPower += Math.floor(myComboCount / 2);
-    if (isPerfectClear) myPower += 10;
 
-    // 🎯 [스프린트 실시간 마감 처리 구역]
+    let isDifficultAction = (rowsCleared === 4 || (isTSpin && rowsCleared > 0));
+    if (rowsCleared > 0) {
+        if (isDifficultAction) {
+            if (myBackToBackActive) {
+                myPower += 1; 
+                technicalName = "✨ B2B " + technicalName;
+            }
+            myBackToBackActive = true;
+        } else {
+            myBackToBackActive = false; 
+        }
+    }
+
+    if (rowsCleared > 0 && myComboCount > 0) {
+        if (myComboCount >= 1 && myComboCount <= 2) myPower += 1;
+        else if (myComboCount >= 3 && myComboCount <= 4) myPower += 2;
+        else if (myComboCount >= 5 && myComboCount <= 6) myPower += 3;
+        else if (myComboCount >= 7) myPower += 4;
+    }
+
+    if (isPerfectClear) {
+        myPower += 10;
+        technicalName = "🎆 PERFECT CLEAR 🎆";
+    }
+
+    if (technicalName && rowsCleared > 0 && !isSoloMode) {
+        document.getElementById('status-msg').innerHTML = `<span style="color:#f1c40f; font-weight:bold; font-size:16px;">${technicalName} 발동! (+${myPower} Line Attack)</span>`;
+    }
+
     if (isSoloMode && rowsCleared > 0) {
         sprintLinesCleared += rowsCleared;
         if (myGame.scoreElement) myGame.scoreElement.innerText = sprintLinesCleared;
 
         if (sprintLinesCleared >= SPRINT_TARGET_LINES) {
-            gameActive = false; // 1. 블록 입력을 멈추고 게임 상태를 완전 동결
-            if (sprintTimerInterval) clearInterval(sprintTimerInterval); // 2. 타이머 백그라운드 인터벌을 죽여 시간 고정!
-            
+            gameActive = false;
+            if (sprintTimerInterval) clearInterval(sprintTimerInterval);
             const endTime = performance.now();
             const finalTimeSec = ((endTime - sprintStartTime) / 1000).toFixed(2);
-            
-            // 3. 💥 alert창 없이 상단 바에 완주 기록을 딱 박제합니다.
             document.getElementById('status-msg').innerText = `🏁 SPRINT FINISH! 기록: ${finalTimeSec}초 🏁`;
             return;
         }
@@ -659,6 +830,7 @@ function mergeAndSweep() {
     if (myPower > 0 && (rowsCleared > 0 || isPerfectClear)) sendAttackToOpponent(rowsCleared, isTSpin, isPerfectClear, myPower);
     if (rowsCleared === 0 && !isPerfectClear) applyPendingAttacks(); 
 
+    lastActionWasRotate = false;
     myPlayerReset();
 }
 
@@ -690,10 +862,9 @@ function mainLoop(time = 0) {
     requestAnimationFrame(mainLoop);
 }
 
-let customRoomNum = null;   // 💡 빠른매칭/연습모드와 절대 꼬이지 않는 독립된 방 번호 메모리
+let customRoomNum = null;   
 let customRoomRole = null;
 
-// 1. 방 만들기 (방장)
 function createCustomRoom() {
     resetAllBoardStates();
 
@@ -705,7 +876,6 @@ function createCustomRoom() {
     showControlButtonsAgain();
 
     document.getElementById('status-msg').innerText = "🏠 새로운 커스텀 대기실이 개설되었습니다.";
-    // 💡 2층 독립 디스플레이 공간에 코드를 이쁘게 고정합니다.
     document.getElementById('custom-room-display').innerHTML = 
         `방 코드: <span style="color: #fff; background: #9b59b6; padding: 3px 10px; border-radius: 4px; font-size: 16px; font-weight: bold;">${customRoomNum}</span> (상대 대기 중...)`;
     
@@ -714,7 +884,6 @@ function createCustomRoom() {
 
 let isJoinProcessing = false; 
 
-// 2. 방 참가하기 (도전자 - ★재클릭 시 서버 오염 원천 차단 버전)
 function joinCustomRoom() {
     if (isJoinProcessing) return;
     isJoinProcessing = true;
@@ -722,9 +891,6 @@ function joinCustomRoom() {
     const inputVal = document.getElementById('input-room-id').value.trim();
     if (!inputVal) { alert("방 코드를 입력해주세요!"); isJoinProcessing = false; return; }
     
-    // 🛡️ [초핵심 방어막] 내가 이미 이 방 코드로 접속 완료한 도전자('p2') 상태라면?
-    // 백엔드로 소켓 신호를 또 날려서 방장의 룸 데이터베이스를 오염시키지 않고, 
-    // 브라우저 내부에서 즉시 대기 완료 화면으로 복구 연동합니다!
     if (customRoomNum === inputVal && customRoomRole === 'p2') {
         console.log("⚠️ [안심 복구] 이미 접속된 방입니다. 서버 패킷 송출을 차단하고 UI를 고정합니다.");
         
@@ -735,7 +901,6 @@ function joinCustomRoom() {
         return;
     }
     
-    // 완전히 새로운 방 번호를 입력했을 때만 깨끗하게 초기화 후 서버로 전송
     resetAllBoardStates();
     
     customRoomNum = inputVal;
@@ -753,7 +918,6 @@ function joinCustomRoom() {
     }, 600);
 }
 
-// 3. 동일한 방에 두 사람이 모였을 때 트리거 (★무조건 문구 복구 치트키)
 socket.on('opponent_joined', function(data) {
     if (sprintTimerInterval) { 
         clearInterval(sprintTimerInterval); 
@@ -775,9 +939,7 @@ socket.on('opponent_joined', function(data) {
     }
 });
 
-// 4. 방장이 [대전 시작하기] 버튼을 눌렀을 때 백엔드로 신호 전송 (★오차 제어 주소 파싱)
 function startCustomMatch() {
-    // 💡 어떤 상황에서도 룸 주소의 순수한 '숫자' 값만 정확하게 발라내어 백엔드로 전달합니다!
     let pureNum = customRoomNum;
     if (!pureNum && roomId) {
         pureNum = roomId.replace("custom_room_", "").replace("room_", "");
@@ -787,9 +949,8 @@ function startCustomMatch() {
     socket.emit('start_custom_match', { room_id: pureNum.trim() });
 }
 
-// 💡 매치 시작 이벤트가 오면 처리 플래그를 깔끔하게 초기화해줍니다.
 socket.on('match_start_custom', function(data) {
-    isJoinProcessing = false; // 락 해제
+    isJoinProcessing = false; 
     resetAllBoardStates();
     
     roomId = data.roomId;
@@ -811,7 +972,6 @@ socket.on('match_start_custom', function(data) {
     myPlayerReset();
 });
 
-// 💀 6. 게임 종료 후 혼자하기(대기실 스파링) 자동 복구 시스템
 function showControlButtonsAgain() {
     isSoloMode = true; 
     gameActive = true; 
@@ -843,7 +1003,6 @@ function showControlButtonsAgain() {
     }
 }
 
-// 💡 7. 혼자하기(연습) 버튼 직접 클릭 시 핸들러
 document.getElementById('btn-solo').addEventListener('click', () => {
     const backupNum = customRoomNum;
     const backupRole = customRoomRole;
@@ -884,7 +1043,6 @@ socket.on('rematch_triggered', function(data) {
 socket.on('opponent_left', function() {
     console.log("🔌 상대방의 접속 종료가 감지되어 상대방 화면을 완전히 청소합니다.");
     
-    // 1. 메모리에 잔존하는 상대방 지형 데이터 구조 0으로 올 클리어
     oppGame.board = Array.from({length: 20}, () => Array(10).fill(0));
     oppGame.score = 0;
     if (oppGame.scoreElement) oppGame.scoreElement.innerText = 0;
@@ -892,19 +1050,13 @@ socket.on('opponent_left', function() {
     oppGame.nextQueue = [];
     oppGame.pendingAttacks = 0;
     
-    // 🛡️ [초핵심] 객체 껍데기만 남겨두지 않고 완전한 null로 찢어버려,
-    // mainLoop 조건문(if (oppGame.player)) 자체를 원천 탈락시켜 잔상 렌더링을 완전히 차단합니다!
     oppGame.player = null;
     
-    // 공격 게이지 물리 리셋
     if (oppGame.gaugeElement) updateAttackGauge(oppGame.gaugeElement, 0);
 
-    // 2. 캔버스 강제 물리 드로잉 리프레시 (검은 도화지로 즉시 덮어쓰기)
-    // 이 처리를 수동으로 한 번 해줘야 픽셀 버퍼에 고여있던 유령 블록이 100% 증발합니다.
     drawGrid(oppGame.ctx, oppGame.canvas);
     drawMatrix(oppGame.board, {x:0, y:0}, null, oppGame.ctx);
 
-    // 3. 상대방 미니 프리뷰 캔버스(NEXT, HOLD) 원본 함수 예외 우회 강제 청소
     if (oppGame.holdCtx && oppGame.holdCanvas) {
         oppGame.holdCtx.fillStyle = '#000';
         oppGame.holdCtx.fillRect(0, 0, oppGame.holdCanvas.width, oppGame.holdCanvas.height);
@@ -914,23 +1066,23 @@ socket.on('opponent_left', function() {
         oppGame.nextCtx.fillRect(0, 0, oppGame.nextCanvas.width, oppGame.nextCanvas.height);
     }
     
-    // 4. 상대방 구역 섹션을 반투명하게 흐리게 만들어 빈방임을 가시화
     const oppSec = document.getElementById('opp-section');
     if (oppSec) oppSec.style.opacity = "0.2";
     
-    // 5. 내 게임 동결 (연습모드는 멈추지 않되 대전 세션 완전 Off)
     gameActive = false;
 });
 
 mainLoop();
 
-// 💡 1. DOM 요소 바인딩 가드 (입력 및 전송 버튼 전용)
+// ==========================================================================
+// 💬 [JIKONG TRIS 우측 독립 패널 전용 실시간 웹소켓 채팅 엔진 - ★진짜 100% 최종장]
+// ==========================================================================
+
 window.addEventListener('DOMContentLoaded', () => {
     const chatInput = document.getElementById('chat-input-field');
     const chatBtn = document.querySelector('#jikong-chat-panel button.menu-btn');
 
     if (chatInput) {
-        // 채팅창 입력 중 테트리스 블록 조작키 오염 방지 가드
         chatInput.addEventListener('keydown', (e) => {
             e.stopPropagation(); 
             if (e.keyCode === 13) { 
@@ -940,7 +1092,6 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     if (chatBtn) {
-        // [전송] 버튼 클릭 이벤트 연동 (인라인 onclick 흔적 완전 박멸)
         chatBtn.removeAttribute('onclick'); 
         chatBtn.addEventListener('click', () => {
             executeSendChatMessage();
@@ -948,7 +1099,6 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// 🚀 2. 채팅 전송 핵심 함수 (글로벌 룸 ID 스냅샷 실시간 추적)
 function executeSendChatMessage() {
     const inputField = document.getElementById('chat-input-field');
     if (!inputField) return;
@@ -956,7 +1106,6 @@ function executeSendChatMessage() {
     const message = inputField.value.trim();
     if (!message) return; 
     
-    // 💡 빠른 매칭 룸 ID(roomId)를 1순위로 강제 징집합니다.
     let activeRoom = roomId || (customRoomNum ? "custom_room_" + customRoomNum : null);
     
     console.log("📤 [JIKONG CHAT 발사] 타겟 채널 주소 ➔", activeRoom);
@@ -978,43 +1127,49 @@ function executeSendChatMessage() {
     inputField.focus();    
 }
 
-// 🎯 3. [★초초초핵심 개혁] 변수 꼬임 필터를 완전 삭제한 '글로벌 강제 렌더링' 수신 리스너!
-// 💡 가드 바깥으로 독립 배치하여 소켓 패킷 유실을 원천 차단합니다.
-socket.off('receive_room_chat'); // 중복 바인딩 버그 완전 세척
+socket.off('receive_room_chat'); 
 socket.on('receive_room_chat', function(data) {
     console.log("📥 [JIKONG CHAT] 화면 주입 패킷 실제 도달 ➔", data);
     
-    // 1대1 대전 뷰(#view-pvp) 내부의 진짜 대화창 로그 박스를 정밀 조준합니다![cite: 4]
-    const pvpView = document.getElementById('view-pvp');
-    if (!pvpView) return;
-    const logBox = pvpView.querySelector('#chat-log-box');
+    const logBox = document.getElementById('chat-log-box');
     if (!logBox) return;
     
-    // 초기 환영 안내문 문구가 들어있다면 최초 한 번 증발[cite: 10]
     if (logBox.innerHTML.includes('통합 채팅 채널')) {
         logBox.innerHTML = '';
     }
 
-    // 💡 [유저님 요청] 방장/도전자 명칭을 전면 폐지하고 p1, p2 태그로 칼성형!
-    let badgeColor = '#e67e22'; // p2 기본 컬러 (오렌지)
+    let badgeColor = '#e67e22'; 
     let badgeName = '[p2]';
     
-    // 데이터의 role 값이 p1 문자를 포함하고 있다면 블루팀 p1으로 고정 판정
     if (data.role && data.role.toString().includes('p1')) {
-        badgeColor = '#3498db'; // p1 기본 컬러 (블루)
+        badgeColor = '#3498db'; 
         badgeName = '[p1]';
     }
     
-    // 가독성을 위해 대화 텍스트는 깔끔한 흰색 볼드로 통일
     let textStyle = "color: #ffffff; font-weight: bold;"; 
 
-    // 🎨 도큐먼트 로우 생성 (긴 타자 틀 깨짐 방지 락 포함)[cite: 10]
-    const chatRow = document.createElement('div');
-    chatRow.style.margin = "5px 0";
-    chatRow.style.wordBreak = "break-all"; 
-    chatRow.innerHTML = `<span style="color: ${badgeColor}; font-weight: bold; margin-right: 6px;">${badgeName}</span><span style="${textStyle}">${data.msg}</span>`;
+    const newChatRowHtml = `<div style="margin: 5px 0; word-break: break-all; text-align: left;"><span style="color: ${badgeColor}; font-weight: bold; margin-right: 6px;">${badgeName}</span><span style="${textStyle}">${data.msg}</span></div>`;
     
-    // 🚀 진짜 1대1 채팅창 화면에 미련 없이 강제 주입 슛![cite: 10]
-    logBox.appendChild(chatRow);
-    logBox.scrollTop = logBox.scrollHeight; // 스크롤 하단 자동 고정[cite: 10]
+    logBox.innerHTML += newChatRowHtml;
+    
+    logBox.scrollTop = logBox.scrollHeight; 
+});
+
+socket.on('match_finished_trigger', function(data) {
+    console.log("💥 실시간 배틀 라운드가 공식 종료되었습니다. 대기실 제어권을 복구합니다.");
+    
+    gameActive = false;
+    if (sprintTimerInterval) clearInterval(sprintTimerInterval);
+
+    showControlButtonsAgain();
+
+    if (socket.id === data.loser) {
+        document.getElementById('status-msg').innerHTML = 
+            `<span style="color: #e74c3c; font-weight:bold; font-size: 18px;">DEFEAT (패배) 😭</span><br>` +
+            `<span style="font-size: 12px; color: #aaa;">다시 시작하려면 [다시시작] 버튼이나 방장의 재경기 신호를 기다리세요.</span>`;
+    } else {
+        document.getElementById('status-msg').innerHTML = 
+            `<span style="color: #2ecc71; font-weight:bold; font-size: 18px;">🎉 WINNER WINNER! 승리했습니다! 🎉</span><br>` +
+            `<span style="font-size: 12px; color: #aaa;">우측 [다시시작] 버튼을 눌러 리턴 매치를 요청할 수 있습니다.</span>`;
+    }
 });
