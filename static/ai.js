@@ -1,7 +1,6 @@
 // ai/ai.js
-console.log("🤖 지능형 AI 랩 엔진 V7.1 가동 (천장 멈춤 버그 및 홀드 UI 동기화 완료).");
+console.log("🤖 지능형 AI 랩 엔진 V7.3 가동 (글로벌 스코프 중복 선언 및 변수 충돌 완전 해결).");
 
-// const aiServerScoket = io("http://127.0.0.1:5000");
 const aiServerScoket = io(window.location.origin);
 
 let aiGameActive = false;
@@ -20,10 +19,8 @@ let AI_DAS_DELAY_MS = 150;
 let AI_ARR_FRAME_RATE = 1;  
 let AI_SOFT_DROP_RATE = 25; 
 
-const AI_WK_TESTS_90 = [
-    {dx: 0, dy: 0}, {dx: -1, dy: 0}, {dx: 1, dy: 0}, {dx: 0, dy: 1},   
-    {dx: -1, dy: 1}, {dx: 1, dy: 1}, {dx: 0, dy: -1}, {dx: -2, dy: 0}, {dx: 2, dy: 0}    
-];
+// 💡 [안내] SRS_KICK_DATA 및 SRS_I_KICK_DATA 변수 선언부는 
+// 전역 메모리를 공유하는 aaa.js에 이미 완벽히 선언되어 있으므로, 중복 선언 에러 방지를 위해 여기서는 생략합니다!
 
 let aiMyGame = {
     canvas: document.getElementById('ai-my-tetris'), ctx: document.getElementById('ai-my-tetris').getContext('2d'),
@@ -61,6 +58,7 @@ document.addEventListener('keydown', e => {
     if (e.keyCode === 40) aiPlayerDrop();
     if (e.keyCode === 88 || e.keyCode === 38) aiPlayerRotate(1); 
     if (e.keyCode === 90) aiPlayerRotate(-1);                   
+    if (e.keyCode === 65) aiPlayerRotate(2); 
     if (e.keyCode === 32) aiHardDrop();                         
     if (e.keyCode === 67) aiPlayerHold();                       
 });
@@ -94,7 +92,11 @@ function handleAiContinuousInput(deltaTime) {
     } else { aiSoftDropTimer = 0; }
 }
 
-document.getElementById('btn-ai-start').addEventListener('click', () => {
+document.getElementById('btn-ai-start').addEventListener('click', (e) => {
+    // 💡 [초핵심 패치] 대전 시작을 마우스로 클릭하자마자 버튼에서 포커스를 즉시 이탈(blur)시킵니다.
+    // 이 처리를 통해 이후 엔터키나 스페이스바를 갈겨도 버튼이 중복 연타되지 않고 순수 블록 조작만 작동합니다!
+    if (e.target) e.target.blur();
+
     gameActive = false; aiGameActive = true;
     aiMyGame.board = Array.from({length: 20}, () => Array(10).fill(0));
     aiMyGame.nextQueue = [...generateSharedBag(), ...generateSharedBag()];
@@ -121,8 +123,6 @@ document.getElementById('btn-ai-start').addEventListener('click', () => {
 function runBotAI() {
     if (!aiGameActive || !botGame.player.matrix) return;
     
-    // 💡 [초핵심] holdType이 null이거나 비어있을 때는 백엔드가 에러 없이 파싱할 수 있도록 
-    // 문자열 "NONE" 또는 유효한 형식을 명시적으로 지정하여 전달합니다!
     const currentHold = botGame.holdType ? botGame.holdType : "NONE";
     
     const packet = {
@@ -138,7 +138,6 @@ function runBotAI() {
 aiServerScoket.on("response_ai_decision", (decision) => {
     if (!aiGameActive) return;
     
-    // 1. 🧠 AI가 "지금 블록보다 홀드에 저장된 게 훨씬 이득이야!"라고 판단했다면 홀드 액션 실행!
     if (decision.shouldSwap) {
         botPlayerHoldAction(); 
         return; 
@@ -147,16 +146,12 @@ aiServerScoket.on("response_ai_decision", (decision) => {
     const bestX = decision.bestX;
     const bestRot = decision.bestRot;
     
-    // 2. 🛡️ [원본 오염 원천 차단] Next 큐의 원본 매트릭스를 건드리지 않고, 
-    // 새로운 독립 사본 배열을 만들어서 깨끗하게 회전 연산을 적용합니다!
     let rotatedMatrix = botGame.player.matrix.map(row => [...row]);
     for (let r = 0; r < bestRot; r++) {
         aiRotateMatrix(rotatedMatrix, 1);
     }
     botGame.player.matrix = rotatedMatrix;
     
-    // 3. 🎯 [오프셋 정밀 보정] 백엔드 그리드 연산 기준에 완벽 매칭되도록 
-    // 가로 폭을 대입하고,Collide 예외 없이 바닥으로 즉시 하드드롭 슛을 날립니다.
     botGame.player.pos.x = bestX;
     botGame.player.pos.y = 0; 
     
@@ -169,7 +164,6 @@ aiServerScoket.on("response_ai_decision", (decision) => {
     while (!aiCollide(botGame.board, botGame.player)) { botGame.player.pos.y++; }
     botGame.player.pos.y--;
     
-    // 💥 보드판 융합 및 줄 삭제 진행
     botMergeAndSweep();
 });
 
@@ -179,6 +173,8 @@ function aiPlayerResetUser() {
     aiMyGame.player.type = getPieceType(aiMyGame.player.matrix);
     aiMyGame.player.color = SHAPES[aiMyGame.player.type].color;
     aiMyGame.player.pos.y = 0;
+    
+    aiMyGame.player.currentFacing = 0;
     
     const baseStartX = Math.floor(10 / 2) - Math.floor(aiMyGame.player.matrix[0].length / 2);
     if (aiMyGame.player.type !== 'I' && aiMyGame.player.type !== 'O') {
@@ -205,7 +201,7 @@ function botPlayerReset() {
         return;
     }
     botDrawNextPreview();
-    botDrawHold(); // 💡 블록이 새로 소환될 때도 홀드 UI를 강제로 다시 그려 백화현상 원천 차단!
+    botDrawHold(); 
     
     botGame.canSwap = true; 
     
@@ -337,17 +333,99 @@ function aiHardDrop() {
     while (!aiCollide(aiMyGame.board, aiMyGame.player)) aiMyGame.player.pos.y++;
     aiMyGame.player.pos.y--; aiMergeAndSweepUser();
 }
+
+function getRotatedMatrix(matrix, dir) {
+    if (!matrix) return null;
+    let n = matrix.length;
+    let temp = matrix.map(row => [...row]);
+    
+    if (dir === 1 || dir === -1) {
+        for (let y = 0; y < n; ++y) {
+            for (let x = 0; x < y; ++x) {
+                [temp[x][y], temp[y][x]] = [temp[y][x], temp[x][y]];
+            }
+        }
+    }
+    if (dir === 1) {
+        temp.forEach(row => row.reverse());
+    } else if (dir === -1) {
+        temp.reverse();
+    } else if (dir === 2) {
+        temp.reverse(); 
+        temp.forEach(row => row.reverse());
+    }
+    return temp;
+}
+
 function aiPlayerRotate(dir) {
     if (!aiGameActive || !aiMyGame.player.matrix) return;
-    const origX = aiMyGame.player.pos.x; const origY = aiMyGame.player.pos.y;
-    aiRotateMatrix(aiMyGame.player.matrix, dir);
-    const tests = AI_WK_TESTS_90; let success = false;
-    for (let test of tests) {
-        aiMyGame.player.pos.x = origX + test.dx; aiMyGame.player.pos.y = origY + test.dy;
-        if (!aiCollide(aiMyGame.board, aiMyGame.player)) { success = true; aiMyGame.lockDelayTimer = 0; break; }
+
+    const origX = aiMyGame.player.pos.x;
+    const origY = aiMyGame.player.pos.y;
+    const origMat = aiMyGame.player.matrix;
+    const pieceType = aiMyGame.player.type;
+
+    if (pieceType === 'O') {
+        return;
     }
-    if (!success) { aiMyGame.player.pos.x = origX; aiMyGame.player.pos.y = origY; aiRotateMatrix(aiMyGame.player.matrix, -dir); }
+
+    let currentFacing = aiMyGame.player.currentFacing !== undefined ? aiMyGame.player.currentFacing : 0;
+
+    let nextFacing = currentFacing;
+    if (dir === 1) nextFacing = (currentFacing + 1) % 4;        
+    else if (dir === -1) nextFacing = (currentFacing + 3) % 4;   
+    else if (dir === 2) nextFacing = (currentFacing + 2) % 4;    
+
+    const nextMatrix = getRotatedMatrix(origMat, dir);
+
+    let testPlayer = {
+        pos: { x: origX, y: origY },
+        matrix: nextMatrix
+    };
+
+    const kickKey = `${currentFacing}->${nextFacing}`;
+    // 💡 aaa.js에 기선언되어 있는 전역 데이터셋(SRS_I_KICK_DATA, SRS_KICK_DATA)을 유연하게 매칭하여 추적합니다!
+    const kicks = (pieceType === 'I') ? (SRS_I_KICK_DATA[kickKey] || [{x:0, y:0}]) : (SRS_KICK_DATA[kickKey] || [{x: 0, y: 0}]);
+
+    let success = false;
+    for (let kick of kicks) {
+        testPlayer.pos.x = origX + kick.x;
+        testPlayer.pos.y = origY + kick.y; 
+        if (!aiCollide(aiMyGame.board, testPlayer)) {
+            success = true;
+            break;
+        }
+
+        testPlayer.pos.x = origX - kick.x;
+        testPlayer.pos.y = origY + kick.y; 
+        if (!aiCollide(aiMyGame.board, testPlayer)) {
+            success = true;
+            break;
+        }
+
+        testPlayer.pos.x = origX + kick.x;
+        testPlayer.pos.y = origY - kick.y; 
+        if (testPlayer.pos.y >= origY) {
+            if (!aiCollide(aiMyGame.board, testPlayer)) {
+                success = true;
+                break;
+            }
+        }
+    }
+
+    if (success) {
+        aiMyGame.player.matrix = nextMatrix;
+        aiMyGame.player.pos.x = testPlayer.pos.x;
+        aiMyGame.player.pos.y = testPlayer.pos.y;
+        aiMyGame.player.currentFacing = nextFacing; 
+        aiMyGame.lockDelayTimer = 0;
+    } else {
+        aiMyGame.player.pos.x = origX;
+        aiMyGame.player.pos.y = origY;
+        aiMyGame.player.matrix = origMat;
+    }
 }
+
 function aiPlayerHold() {
     if (!aiMyGame.canSwap) return;
     if (aiMyGame.holdType === null) {
@@ -417,22 +495,18 @@ function botPlayerHoldAction() {
 }
 
 function botDrawHold() {
-    // 💡 [초핵심] 캔버스와 2D 컨텍스트 객체를 명확히 타겟팅합니다.
     let canvas = botGame.holdCanvas;
     let ctx = botGame.holdCtx;
     
     if (!canvas || !ctx) return;
 
-    // 도화지(검은색 배경) 깨끗하게 밀기
     ctx.fillStyle = '#000'; 
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // 봇이 홀드한 블록 타입이 존재할 때만 이쁘게 그리기 시작!
     if (botGame.holdType && SHAPES[botGame.holdType]) {
         const m = SHAPES[botGame.holdType].matrix;
         const color = SHAPES[botGame.holdType].color;
         
-        // 🎨 홀드창 정중앙 정렬을 위한 오프셋 계산 (16픽셀 소형 미노 규격)
         const offsetX = (canvas.width - m[0].length * 16) / 2 / 16; 
         const offsetY = (canvas.height - m.length * 16) / 2 / 16;
         
@@ -483,6 +557,7 @@ function aiMainLoop(time = 0) {
     if (aiGameActive && document.getElementById('view-ai').classList.contains('active')) {
         handleAiContinuousInput(deltaTime); 
         if (aiMyGame.player && aiMyGame.player.matrix) {
+            // 💡 [수정 완료] 기존 꼬임 코드 'myGame.player.matrix'를 명확하게 'aiMyGame.player.matrix'로 추적 타겟 교정 완료!
             let tempPlayer = { pos: { x: aiMyGame.player.pos.x, y: aiMyGame.player.pos.y + 1 }, matrix: aiMyGame.player.matrix };
             if (aiCollide(aiMyGame.board, tempPlayer)) {
                 aiMyGame.lockDelayTimer += deltaTime; aiMyGame.lockTotalHighestTimer += deltaTime;

@@ -434,7 +434,10 @@ function startSprintRealtimeTimer() {
     }, 30); 
 }
 
-document.getElementById('btn-start').addEventListener('click', () => {
+document.getElementById('btn-start').addEventListener('click', (e) => {
+    // 💡 [초핵심] 엔터키/스페이스바 연타 오작동을 막기 위해 클릭되자마자 포커스를 빼앗습니다.
+    if (e.target) e.target.blur();
+
     resetAllBoardStates();
     isSoloMode = false;
     
@@ -451,7 +454,10 @@ document.getElementById('btn-start').addEventListener('click', () => {
     socket.emit('request_match'); 
 });
 
-document.getElementById('btn-solo').addEventListener('click', () => {
+document.getElementById('btn-solo').addEventListener('click', (e) => {
+    // 💡 [초핵심] 클릭 즉시 포커스를 해제하여 스페이스바가 버튼을 다시 누르지 않도록 차단합니다.
+    if (e.target) e.target.blur();
+
     const savedRoomId = roomId;
     const savedMyRole = myRole;
 
@@ -482,7 +488,10 @@ document.getElementById('btn-solo').addEventListener('click', () => {
 });
 
 if (document.getElementById('btn-restart')) {
-    document.getElementById('btn-restart').onclick = function() {
+    document.getElementById('btn-restart').onclick = function(e) {
+        // 💡 [초핵심] 재대결 요청 후 엔터키를 누르면 또 다시시작 요청 패킷을 연타하는 버그를 완벽 방어합니다!
+        if (e.target) e.target.blur();
+
         if (typeof roomId !== 'undefined' && roomId) {
             document.getElementById('status-msg').innerHTML = `🔄 상대방에게 재대결 요청을 보내는 중...`;
             socket.emit('request_rematch', { room_id: roomId, role: myRole });
