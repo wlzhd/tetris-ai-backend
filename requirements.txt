@@ -2,3 +2,4 @@ fastapi
 uvicorn
 python-socketio
 numpy
+python-multipart
