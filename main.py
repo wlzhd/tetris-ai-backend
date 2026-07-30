@@ -1,10 +1,12 @@
 # main.py
 import uvicorn
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles # 💡 HTML 화면을 뿌려주기 위한 도구
+from fastapi import FastAPI, Form
+from fastapi.staticfiles import StaticFiles
 import socketio
 import numpy as np
 import os
+import json
+from pathlib import Path
 
 print("🚀 [실서비스 배포 버전] 1vs1 멀티플레이 및 초고지능 AI 통합 서버 가동.")
 
@@ -16,7 +18,65 @@ app = FastAPI()
 
 # 💡 [핵심 패치] static 폴더 안에 있는 aaa.html, aaa.js 등을 인터넷 주소로 뿌려줍니다!
 app.mount("/game", StaticFiles(directory="static", html=True), name="static")
-app.mount('/', socketio.ASGIApp(sio))
+app.mount('/socket.io', socketio.ASGIApp(sio))
+
+# ----------------------------------------------------------------------
+# 🛞 [JSON 파일 기반 미쉐린 랭킹 시스템]
+# ----------------------------------------------------------------------
+JSON_DIR = Path("static/json")
+JSON_PATH = JSON_DIR / "rank_json.json"
+
+def init_json_file():
+    if not JSON_DIR.exists():
+        JSON_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # 파일이 아예 없거나, 파일 크기가 0byte(빈 파일)일 때 기본 값 [] 채우기
+    if not JSON_PATH.exists() or JSON_PATH.stat().st_size == 0:
+        with open(JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump([], f, ensure_ascii=False, indent=4)
+
+# 서버 가동 시 JSON 저장소 준비
+init_json_file()
+
+# 1. 랭킹 목록 조회 API (.do 포함 및 미포함 주소 모두 수용)
+@app.post("/michelin/getRankList")
+async def get_rank_list():
+    try:
+        init_json_file()
+        with open(JSON_PATH, "r", encoding="utf-8") as f:
+            try:
+                ranks = json.load(f)
+            except json.JSONDecodeError:
+                ranks = [] # JSON이 깨졌을 경우 빈 배열로 대체
+                
+        sorted_ranks = sorted(ranks, key=lambda x: int(x.get("score", 0)), reverse=True)[:5]
+        return sorted_ranks
+    except Exception as e:
+        print(f"❌ 랭킹 조회 에러: {e}")
+        return []
+
+# 2. 랭킹 저장 API (.do 포함 및 미포함 주소 모두 수용)
+@app.post("/saveRank")
+async def save_rank(username: str = Form(...), score: int = Form(...)):
+    try:
+        init_json_file()
+        ranks = []
+        with open(JSON_PATH, "r", encoding="utf-8") as f:
+            try:
+                ranks = json.load(f)
+            except json.JSONDecodeError:
+                ranks = []
+
+        ranks.append({"username": username.strip(), "score": int(score)})
+        ranks = sorted(ranks, key=lambda x: int(x.get("score", 0)), reverse=True)[:10]
+
+        with open(JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump(ranks, f, ensure_ascii=False, indent=4)
+
+        return {"status": "success", "message": "랭킹 저장 완료"}
+    except Exception as e:
+        print(f"❌ 랭킹 저장 에러: {e}")
+        return {"status": "error", "message": str(e)}
 
 # ----------------------------------------------------------------------
 # 🤝 [1vs1 실시간 대전 멀티플레이 매칭 및 룸 매니저 로직]
@@ -38,11 +98,9 @@ async def disconnect(sid, reason=None):  # 💡 [초핵심] reason=None 인자�
     # 만약 게임 중에 탈주했다면 상대방에게 승리 알림 및 화면 청소 명령 하달
     for room_id, room in list(rooms.items()):
         if sid in room['players']:
-            # players 가 유효한 리스트이고 요소가 존재하는지 엄격히 검증
             if room['players'] and len(room['players']) >= 2:
                 opp_id = room['players'][1] if room['players'][0] == sid else room['players'][0]
                 
-                # 남은 유저의 프론트엔드에 상대방 그래픽을 리셋하라는 이벤트를 쏩니다!
                 await sio.emit('status', "상대방이 게임을 떠났습니다.", to=opp_id)
                 await sio.emit('opponent_left', {}, to=opp_id)
             
@@ -54,7 +112,6 @@ async def disconnect(sid, reason=None):  # 💡 [초핵심] reason=None 인자�
 async def handle_match_request(sid):
     global waiting_player
     
-    # 💡 [초핵심 패치] 빠른 매칭으로 전환하기 전, 이 유저가 방장으로 있던 커스텀 방이 있다면 백엔드에서 즉시 제거합니다!
     for r_id, r_data in list(rooms.items()):
         if r_id.startswith("custom_room_") and r_data['players'][0] == sid:
             if r_id in rooms:
@@ -73,7 +130,6 @@ async def handle_match_request(sid):
         room_id = f"room_{p1}_{p2}"
         rooms[room_id] = { 'players': [p1, p2] }
         
-        # 빠른 매칭으로 묶인 두 유저를 실시간 소켓 룸(Room)에 명확히 물리 입장시킵니다!
         await sio.enter_room(p1, room_id)
         await sio.enter_room(p2, room_id)
         
@@ -104,7 +160,7 @@ async def handle_attack(sid, data):
                 await sio.emit('receive_attack', data, to=p)
 
 # ----------------------------------------------------------------------
-# 🧠 [초고지능 AI 백엔드 연산 레이어] (기존 코드 그대로 탑재)
+# 🧠 [초고지능 AI 백엔드 연산 레이어]
 # ----------------------------------------------------------------------
 SHAPE_MATRICES = {
     'I': [[[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]], [[0,0,1,0],[0,0,1,0],[0,0,1,0],[0,0,1,0]], [[0,0,0,0],[0,0,0,0],[1,1,1,1],[0,0,0,0]], [[0,1,0,0],[0,1,0,0],[0,1,0,0],[0,1,0,0]]],
@@ -219,22 +275,18 @@ async def handle_create_custom_room(sid, data):
     rooms[room_name] = { 'players': [sid, None] }
     print(f"[커스텀방 개설] 방장 {sid} -> 방 이름 {room_name}")
 
-# ⚔️ 2. 커스텀 방 참가하기 이벤트 (★재접속 시 방 자폭 버그 완벽 박멸 버전)
-# ⚔️ 2. 커스텀 방 참가하기 이벤트 (★소켓 데이터 유실 완벽 예방 버전)
+# ⚔️ 2. 커스텀 방 참가하기 이벤트
 @sio.on('join_custom_room')
 async def handle_join_custom_room(sid, data):
     room_id = str(data.get('room_id')).strip()
     room_name = f"custom_room_{room_id}"
     
-    # 🛡️ 방이 실존하는지 먼저 확실하게 체크합니다.
     if room_name in rooms:
-        # 만약 내가 이미 정식 등록 완료된 유저라면, 소켓방 탈퇴 루프를 완전히 패스하고 즉시 리턴합니다!
         if rooms[room_name]['players'][0] == sid or rooms[room_name]['players'][1] == sid:
             print(f"⚠️ [참가 패스] 유저 {sid}는 이미 {room_name}의 핵심 멤버입니다. 데이터 유실을 방지합니다.")
             await sio.emit('opponent_joined', {'room_id': room_id}, room=room_name)
             return
 
-    # 내가 완전히 다른 방에 접속을 시도할 때만 기존 방 청소 작동
     current_rooms = sio.rooms(sid)
     for r in list(current_rooms):
         if (r.startswith("room_") or r.startswith("custom_room_")) and r != sid:
@@ -271,7 +323,7 @@ async def handle_start_custom_match(sid, data):
             await sio.emit('match_start_custom', {'roomId': room_name, 'role': 'p2', 'initialBags': initial_bags}, to=p2)
             print(f"🚀 [배틀 시작] 독립 세션 {room_name} 런칭!")
 
-# 🔄 4. [다시시작] 버튼을 눌렀을 때 리턴매치 트리거 (방 자동 유지 메커니즘)
+# 🔄 4. [다시시작] 버튼을 눌렀을 때 리턴매치 트리거
 @sio.on('request_rematch')
 async def handle_request_rematch(sid, data):
     raw_room_id = str(data.get('room_id')).strip()
@@ -288,7 +340,6 @@ async def handle_request_rematch(sid, data):
         p2 = rooms[room_name]['players'][1]
         
         if p1 and p2:
-            # 📢 방을 파괴하지 않고 무조건 동시 시작 명령을 하달합니다!
             await sio.emit('rematch_triggered', {'status': 'restart'}, room=room_name)
             
             def gen_bag():
@@ -301,7 +352,7 @@ async def handle_request_rematch(sid, data):
             await sio.emit('match_start_custom', {'roomId': room_name, 'role': 'p2', 'initialBags': initial_bags}, to=p2)
             print(f"🔄 [리턴매치 가동] 세션 {room_name} 동기화 재시작 완료!")
 
-# 💬 5. [우측 완와이드 통합] 실시간 테트리스 룸 단위 채팅 중계 가동부
+# 💬 5. 실시간 테트리스 룸 단위 채팅 중계 가동부
 @sio.on('send_room_chat')
 async def handle_room_chat(sid, data):
     room_id = data.get('roomId')
@@ -311,8 +362,6 @@ async def handle_room_chat(sid, data):
     if not room_id:
         return
 
-    # 💡 [초핵심 패치] room_ id가 빠른 매칭 규격(room_)이든, 커스텀 규격(custom_room_)이든
-    # 실시간 배틀 룸 주소 형태를 띠고 있다면 조건문을 100% 프리패스하여 양쪽에 브로드캐스팅합니다!
     if room_id.startswith("room_") or room_id.startswith("custom_room_") or room_id in rooms:
         await sio.emit('receive_room_chat', {'role': role, 'msg': msg}, room=room_id)
         print(f"💬 [채팅 중계] 채널: {room_id} ➔ {role}: {msg}")
@@ -321,13 +370,12 @@ async def handle_room_chat(sid, data):
 async def handle_game_over_event(sid, data):
     room_id = data.get('roomId')
     if room_id in rooms:
-        # 방에 묶인 모든 플레이어에게 예외 없이 게임 종료 패킷 브로드캐스팅!
         await sio.emit('match_finished_trigger', {'loser': sid}, room=room_id)
         print(f"💥 [게임 종료 선언] 룸 ID: {room_id} ➔ 패배 유저: {sid}")
+
 # ----------------------------------------------------------------------
 # 🚀 [가동부 환경 파싱 및 포트 트리거]
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
-    # Render 클라우드가 지정하는 동적 포트를 수용하도록 세팅합니다!
     port = int(os.environ.get("PORT", 5000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)

@@ -92,6 +92,23 @@
         .attack-gauge-fill { width: 100%; height: 0%; background: #e74c3c; transition: height 0.2s ease; box-shadow: 0 0 8px #e74c3c; }
 
         #info { margin-top: 15px; font-size: 12px; color: #888; text-align: center; background: #1e1e1e; padding: 8px 20px; border-radius: 8px; }
+
+        /* 🏆 랭킹 모달 전용 스타일 추가 */
+        .rank-modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0, 0, 0, 0.75); display: flex; justify-content: center; align-items: center; z-index: 2000;
+        }
+        .rank-modal-box {
+            background: #23272a; border: 2px solid #f1c40f; border-radius: 12px; padding: 20px;
+            width: 380px; box-shadow: 0 0 20px rgba(241, 196, 15, 0.4); color: #fff;
+        }
+        .rank-modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .rank-modal-header h3 { margin: 0; color: #f1c40f; font-size: 18px; }
+        .rank-modal-close { font-size: 22px; cursor: pointer; color: #aaa; }
+        .rank-modal-close:hover { color: #fff; }
+        .rank-table { width: 100%; border-collapse: collapse; text-align: center; margin-top: 10px; }
+        .rank-table th { border-bottom: 2px solid #444; padding: 8px; color: #3498db; }
+        .rank-table td { border-bottom: 1px solid #333; padding: 10px; }
     </style>
 </head>
 <body>
@@ -101,8 +118,7 @@
         <button class="header-tab active" id="tab-pvp" onclick="switchMode('pvp')">⚔️ 1대1 대전 방</button>
         <button class="header-tab" id="tab-ai" onclick="switchMode('ai')">🤖 지능형 봇전 대전</button>
         <button class="header-tab" id="tab-marathon" onclick="switchMode('marathon')">🏆 클래식 마라톤</button>
-        <!-- 💡 미쉐린 피하기 탭 -->
-        <button class="header-tab" id="tab-michelin" onclick="switchMode('michelin')">미쉐린 피하기</button>
+        <button class="header-tab" id="tab-michelin" onclick="switchMode('michelin')">🛞 미쉐린 피하기</button>
     </div>
 
     <div id="main-container">
@@ -309,7 +325,6 @@
             </div>
         </div>
 
-        <!-- 💡 미쉐린 피하기 모드 (사이즈 확대: 480x600, 배경: 흰색#ffffff) -->
         <div id="view-michelin" class="game-mode-view">
             <h1>MICHELIN DODGE (미쉐린 피하기)</h1>
             <div class="status-msg" id="michelin-status-msg" style="color: #e74c3c;">하늘에서 떨어지는 미쉐린 타이어를 요리조리 피하세요!</div>
@@ -333,7 +348,6 @@
                             </div>
                         </div>
 
-                        <!-- 💡 캔버스 해상도 확대(480x600) 및 흰색 배경 적용 -->
                         <canvas id="michelin-canvas" class="game-board" width="480" height="600" style="border-color: #e74c3c; background-color: #ffffff;"></canvas>
                         
                         <div class="side-panel">
@@ -389,7 +403,7 @@
         }
 
         /* ===================================================
-           🛞 미쉐린 타이어 피하기 게임 엔진 (확장 & 흰색 배경 반영)
+           🛞 미쉐린 타이어 피하기 게임 엔진
         =================================================== */
         const mCanvas = document.getElementById('michelin-canvas');
         const mCtx = mCanvas.getContext('2d');
@@ -400,14 +414,12 @@
         let michelinAnimationId = null;
         let michelinSpawnTimer = 0;
 
-        // 이미지 로드
         const playerImg = new Image();
         playerImg.src = './image/michelin.png';
 
         const tireImg = new Image();
         tireImg.src = './image/michelin.png';
 
-        // 💡 확장된 캔버스에 맞춰 플레이어 크기(50x50) 및 위치 조정
         const player = {
             x: mCanvas.width / 2 - 25,
             y: mCanvas.height - 60,
@@ -441,13 +453,9 @@
             michelinLoop();
         }
 
-        // 💡 점수(michelinScore)가 올라갈수록 떨어지는 속도가 점진적으로 가속됩니다!
         function spawnTire() {
             const radius = 22 + Math.random() * 8; 
             const x = radius + Math.random() * (mCanvas.width - radius * 2);
-            
-            // 🚀 기본 속도(3~6) + (점수 / 100) 만큼 가속!
-            // 예: 0점일 때 속도 3~6 / 500점일 때 속도 8~11 / 1000점일 때 속도 13~16
             const speed = 3 + Math.random() * 3 + (michelinScore / 100);
 
             tires.push({ x, y: -radius, radius, speed });
@@ -456,15 +464,12 @@
         function michelinLoop() {
             if (!michelinGameActive) return;
 
-            // 1. 💡 배경을 깔끔한 흰색(#ffffff)으로 클리어
             mCtx.fillStyle = '#ffffff';
             mCtx.fillRect(0, 0, mCanvas.width, mCanvas.height);
 
-            // 2. 플레이어 이동 처리
             if (mKeys.left && player.x > 0) player.x -= player.speed;
             if (mKeys.right && player.x + player.width < mCanvas.width) player.x += player.speed;
 
-            // 3. 플레이어 이미지 렌더링
             if (playerImg.complete && playerImg.naturalWidth !== 0) {
                 mCtx.drawImage(playerImg, player.x, player.y, player.width, player.height);
             } else {
@@ -472,7 +477,6 @@
                 mCtx.fillRect(player.x, player.y, player.width, player.height);
             }
 
-            // 4. 장애물 생성
             michelinSpawnTimer++;
             const spawnInterval = Math.max(4, 25 - Math.floor(michelinScore / 100));
     
@@ -481,7 +485,6 @@
                 michelinSpawnTimer = 0;
             }
 
-            // 5. 장애물 이동, 그리기 및 충돌 판정
             for (let i = tires.length - 1; i >= 0; i--) {
                 const t = tires[i];
                 t.y += t.speed;
@@ -498,7 +501,6 @@
                     mCtx.closePath();
                 }
 
-                // 충돌 검사 (Circle vs Box)
                 const closestX = Math.max(player.x, Math.min(t.x, player.x + player.width));
                 const closestY = Math.max(player.y, Math.min(t.y, player.y + player.height));
                 const distanceX = t.x - closestX;
@@ -510,7 +512,6 @@
                     return;
                 }
 
-                // 바닥 도착 시 점수 추가
                 if (t.y - t.radius > mCanvas.height) {
                     tires.splice(i, 1);
                     michelinScore += 10;
@@ -521,6 +522,7 @@
             michelinAnimationId = requestAnimationFrame(michelinLoop);
         }
 
+        // 💡 1. 게임 종료 시 닉네임을 받아 서버로 전송하는 로직
         function gameOverMichelin() {
             michelinGameActive = false;
             document.getElementById('michelin-status-msg').innerText = `게임 오버! 최종 점수: ${michelinScore}점`;
@@ -529,6 +531,117 @@
                 michelinHighScore = michelinScore;
                 document.getElementById('michelin-high-score').innerText = michelinHighScore;
             }
+
+            setTimeout(() => {
+                const username = prompt(`게임 오버! 획득 점수: ${michelinScore}점\n랭킹에 등록할 닉네임을 입력하세요:`);
+                if (username && username.trim() !== '') {
+                    saveRankToJson(username.trim(), michelinScore);
+                }
+            }, 100);
+        }
+
+        // 💡 2. rank_json.json에 저장하도록 서버로 전달하는 함수
+        function saveRankToJson(username, score) {
+            const formData = new URLSearchParams();
+            formData.append('username', username);
+            formData.append('score', score);
+
+            fetch('/saveRank', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert('랭킹이 성공적으로 등록되었습니다!');
+                getGameRank(); // 등록 완료 후 모달창으로 순위 확인
+            })
+            .catch(err => {
+                console.error(err);
+                alert('랭킹 저장 중 오류가 발생했습니다.');
+            });
+        }
+
+        // 💡 3. JSON에서 랭킹 목록을 조회하는 팝업 모달 함수
+        function getGameRank() {
+            if (document.getElementById('rankModalContainer')) return;
+
+            const overlay = document.createElement('div');
+            overlay.id = 'rankModalContainer';
+            overlay.className = 'rank-modal-overlay';
+
+            const modalBox = document.createElement('div');
+            modalBox.className = 'rank-modal-box';
+            modalBox.innerHTML = `
+                <div class="rank-modal-header">
+                    <h3>🏆 전설의 미쉐린 랭킹 TOP 5</h3>
+                    <span class="rank-modal-close" onclick="closeRankModal()">&times;</span>
+                </div>
+                <div class="rank-modal-body">
+                    <table class="rank-table">
+                        <thead>
+                            <tr>
+                                <th>순위</th>
+                                <th>닉네임</th>
+                                <th>점수</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rankTableBody">
+                            <tr><td colspan="3">랭킹 불러오는 중...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            overlay.appendChild(modalBox);
+            document.body.appendChild(overlay);
+
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) closeRankModal();
+            });
+
+            // 백엔드 API로부터 JSON 랭킹 데이터 수신
+            fetch('/michelin/getRankList', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    const tbody = document.getElementById('rankTableBody');
+                    if (!data || data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="3">등록된 랭킹이 없습니다.</td></tr>';
+                        return;
+                    }
+
+                    let html = '';
+                    data.forEach((item, index) => {
+                        let medal = `${index + 1}위`;
+                        if (index === 0) medal = '🥇 1위';
+                        else if (index === 1) medal = '🥈 2위';
+                        else if (index === 2) medal = '🥉 3위';
+
+                        const username = item.username || item.USERNAME || '익명';
+                        let rawScore = item.score !== undefined ? item.score : item.SCORE;
+                        let score = (rawScore === null || rawScore === undefined) ? 0 : Number(rawScore);
+
+                        html += `
+                            <tr>
+                                <td>${medal}</td>
+                                <td>${username}</td>
+                                <td>${score}점</td>
+                            </tr>
+                        `;
+                    });
+                    tbody.innerHTML = html;
+                })
+                .catch(err => {
+                    console.error(err);
+                    const tbody = document.getElementById('rankTableBody');
+                    if (tbody) tbody.innerHTML = '<tr><td colspan="3">랭킹을 불러오는데 실패했습니다.</td></tr>';
+                });
+        }
+
+        // 💡 4. 모달창 닫기 함수
+        function closeRankModal() {
+            const container = document.getElementById('rankModalContainer');
+            if (container) container.remove();
         }
     </script>
 </body>
