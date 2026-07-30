@@ -7,7 +7,7 @@
     
     <script src="https://unpkg.com/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
 
-<script defer src="./aaa.js"></script>
+    <script defer src="./aaa.js"></script>
     <script defer src="./ai.js"></script>
     <script defer src="./marathon.js"></script>
     <style>
@@ -101,6 +101,8 @@
         <button class="header-tab active" id="tab-pvp" onclick="switchMode('pvp')">⚔️ 1대1 대전 방</button>
         <button class="header-tab" id="tab-ai" onclick="switchMode('ai')">🤖 지능형 봇전 대전</button>
         <button class="header-tab" id="tab-marathon" onclick="switchMode('marathon')">🏆 클래식 마라톤</button>
+        <!-- 💡 미쉐린 피하기 탭 -->
+        <button class="header-tab" id="tab-michelin" onclick="switchMode('michelin')">미쉐린 피하기</button>
     </div>
 
     <div id="main-container">
@@ -307,9 +309,47 @@
             </div>
         </div>
 
+        <!-- 💡 미쉐린 피하기 모드 (사이즈 확대: 480x600, 배경: 흰색#ffffff) -->
+        <div id="view-michelin" class="game-mode-view">
+            <h1>MICHELIN DODGE (미쉐린 피하기)</h1>
+            <div class="status-msg" id="michelin-status-msg" style="color: #e74c3c;">하늘에서 떨어지는 미쉐린 타이어를 요리조리 피하세요!</div>
+            
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <button class="menu-btn" id="btn-michelin-start" onclick="startMichelinGame()" style="background: #e74c3c; color:#fff; border-color:#c0392b;">🛞 게임 시작</button>
+            </div>
+            
+            <div id="game-layout">
+                <div class="player-section" style="border-color: #e74c3c;">
+                    <div style="font-size:16px; font-weight:bold; margin-bottom:10px; color:#e74c3c;">SURVIVOR</div>
+                    <div class="game-area">
+                        <div class="side-panel">
+                            <div class="side-box">
+                                <h2>SCORE</h2>
+                                <div id="michelin-score-val" class="score-val" style="color: #f1c40f;">0</div>
+                            </div>
+                            <div class="side-box" style="cursor: pointer;" onclick="getGameRank()">
+                                <h2>RANKING</h2>
+                                <div style="font-size: 13px; color: #3498db; font-weight: bold; margin-top: 3px;">🏆 순위보기</div>
+                            </div>
+                        </div>
+
+                        <!-- 💡 캔버스 해상도 확대(480x600) 및 흰색 배경 적용 -->
+                        <canvas id="michelin-canvas" class="game-board" width="480" height="600" style="border-color: #e74c3c; background-color: #ffffff;"></canvas>
+                        
+                        <div class="side-panel">
+                            <div class="side-box">
+                                <h2>BEST</h2>
+                                <div id="michelin-high-score" class="score-val" style="color: #2ecc71;">0</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div id="info">
-            <b>조작키:</b> 좌우 방향키 (이동) | <b>Z 키:</b> 반시계 회전 | <b>X 키 / ↑ 화살표:</b> 시계 회전<br>
-            아래 방향키 (소프트드롭) | <b>스페이스바:</b> 하드드롭 | <b>C 키:</b> 블록 보관(Hold)
+            <b>테트리스 조작키:</b> 좌우 방향키 (이동) | <b>Z 키:</b> 반시계 회전 | <b>X 키 / ↑ 화살표:</b> 시계 회전 | <b>스페이스바:</b> 하드드롭<br>
+            <b>미쉐린 피하기 조작키:</b> ← / → 방향키 (좌우 이동)
         </div>
     </div>
 
@@ -329,13 +369,16 @@
             } else if (mode === 'marathon') {
                 document.getElementById('tab-marathon').classList.add('active');
                 document.getElementById('view-marathon').classList.add('active');
-                // 마라톤 탭 진입 시 기존 멀티 연동 게임 루프 정지 유도
+                if (typeof gameActive !== 'undefined') gameActive = false;
+                if (typeof aiGameActive !== 'undefined') aiGameActive = false;
+            } else if (mode === 'michelin') {
+                document.getElementById('tab-michelin').classList.add('active');
+                document.getElementById('view-michelin').classList.add('active');
                 if (typeof gameActive !== 'undefined') gameActive = false;
                 if (typeof aiGameActive !== 'undefined') aiGameActive = false;
             }
         }
 
-        // 난이도 버튼 토글 핸들러
         function setBotDifficulty(diff, element) {
             currentBotDifficulty = diff;
             document.querySelectorAll('.ai-btn-group .menu-btn').forEach(btn => btn.classList.remove('selected'));
@@ -343,6 +386,149 @@
             const labelMap = { 'easy': 'BOT (Easy)', 'normal': 'BOT (Normal)', 'hard': 'BOT (Hard)' };
             document.getElementById('bot-title-text').innerText = labelMap[diff];
             document.getElementById('ai-status-msg').innerText = `${labelMap[diff]} 모드가 선택되었습니다. 대전 시작을 눌러주세요!`;
+        }
+
+        /* ===================================================
+           🛞 미쉐린 타이어 피하기 게임 엔진 (확장 & 흰색 배경 반영)
+        =================================================== */
+        const mCanvas = document.getElementById('michelin-canvas');
+        const mCtx = mCanvas.getContext('2d');
+        
+        let michelinGameActive = false;
+        let michelinScore = 0;
+        let michelinHighScore = 0;
+        let michelinAnimationId = null;
+        let michelinSpawnTimer = 0;
+
+        // 이미지 로드
+        const playerImg = new Image();
+        playerImg.src = './image/michelin.png';
+
+        const tireImg = new Image();
+        tireImg.src = './image/michelin.png';
+
+        // 💡 확장된 캔버스에 맞춰 플레이어 크기(50x50) 및 위치 조정
+        const player = {
+            x: mCanvas.width / 2 - 25,
+            y: mCanvas.height - 60,
+            width: 50,   
+            height: 50,  
+            speed: 6.5   
+        };
+
+        let tires = [];
+        const mKeys = { left: false, right: false };
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') mKeys.left = true;
+            if (e.key === 'ArrowRight') mKeys.right = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft') mKeys.left = false;
+            if (e.key === 'ArrowRight') mKeys.right = false;
+        });
+
+        function startMichelinGame() {
+            michelinGameActive = true;
+            michelinScore = 0;
+            tires = [];
+            player.x = mCanvas.width / 2 - player.width / 2;
+            document.getElementById('michelin-score-val').innerText = '0';
+            document.getElementById('michelin-status-msg').innerText = '타이어를 열심히 피하는 중...!';
+            
+            if (michelinAnimationId) cancelAnimationFrame(michelinAnimationId);
+            michelinLoop();
+        }
+
+        // 💡 점수(michelinScore)가 올라갈수록 떨어지는 속도가 점진적으로 가속됩니다!
+        function spawnTire() {
+            const radius = 22 + Math.random() * 8; 
+            const x = radius + Math.random() * (mCanvas.width - radius * 2);
+            
+            // 🚀 기본 속도(3~6) + (점수 / 100) 만큼 가속!
+            // 예: 0점일 때 속도 3~6 / 500점일 때 속도 8~11 / 1000점일 때 속도 13~16
+            const speed = 3 + Math.random() * 3 + (michelinScore / 100);
+
+            tires.push({ x, y: -radius, radius, speed });
+        }
+
+        function michelinLoop() {
+            if (!michelinGameActive) return;
+
+            // 1. 💡 배경을 깔끔한 흰색(#ffffff)으로 클리어
+            mCtx.fillStyle = '#ffffff';
+            mCtx.fillRect(0, 0, mCanvas.width, mCanvas.height);
+
+            // 2. 플레이어 이동 처리
+            if (mKeys.left && player.x > 0) player.x -= player.speed;
+            if (mKeys.right && player.x + player.width < mCanvas.width) player.x += player.speed;
+
+            // 3. 플레이어 이미지 렌더링
+            if (playerImg.complete && playerImg.naturalWidth !== 0) {
+                mCtx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+            } else {
+                mCtx.fillStyle = '#f1c40f';
+                mCtx.fillRect(player.x, player.y, player.width, player.height);
+            }
+
+            // 4. 장애물 생성
+            michelinSpawnTimer++;
+            const spawnInterval = Math.max(4, 25 - Math.floor(michelinScore / 100));
+    
+            if (michelinSpawnTimer > spawnInterval) {
+                spawnTire();
+                michelinSpawnTimer = 0;
+            }
+
+            // 5. 장애물 이동, 그리기 및 충돌 판정
+            for (let i = tires.length - 1; i >= 0; i--) {
+                const t = tires[i];
+                t.y += t.speed;
+
+                const tireDiameter = t.radius * 2;
+
+                if (tireImg.complete && tireImg.naturalWidth !== 0) {
+                    mCtx.drawImage(tireImg, t.x - t.radius, t.y - t.radius, tireDiameter, tireDiameter);
+                } else {
+                    mCtx.beginPath();
+                    mCtx.arc(t.x, t.y, t.radius, 0, Math.PI * 2);
+                    mCtx.fillStyle = '#e74c3c';
+                    mCtx.fill();
+                    mCtx.closePath();
+                }
+
+                // 충돌 검사 (Circle vs Box)
+                const closestX = Math.max(player.x, Math.min(t.x, player.x + player.width));
+                const closestY = Math.max(player.y, Math.min(t.y, player.y + player.height));
+                const distanceX = t.x - closestX;
+                const distanceY = t.y - closestY;
+                const distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+
+                if (distanceSquared < (t.radius * t.radius)) {
+                    gameOverMichelin();
+                    return;
+                }
+
+                // 바닥 도착 시 점수 추가
+                if (t.y - t.radius > mCanvas.height) {
+                    tires.splice(i, 1);
+                    michelinScore += 10;
+                    document.getElementById('michelin-score-val').innerText = michelinScore;
+                }
+            }
+
+            michelinAnimationId = requestAnimationFrame(michelinLoop);
+        }
+
+        function gameOverMichelin() {
+            michelinGameActive = false;
+            document.getElementById('michelin-status-msg').innerText = `게임 오버! 최종 점수: ${michelinScore}점`;
+
+            if (michelinScore > michelinHighScore) {
+                michelinHighScore = michelinScore;
+                document.getElementById('michelin-high-score').innerText = michelinHighScore;
+            }
         }
     </script>
 </body>
