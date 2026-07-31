@@ -2,6 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>ONLINE TETRIS WORLD</title>
     <link rel="icon" href="data:,">
     
@@ -15,6 +16,7 @@
         body {
             background-color: #1a1a1a; color: #ffffff; font-family: 'Malgun Gothic', sans-serif;
             margin: 0; padding: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+            user-select: none; -webkit-user-select: none;
         }
 
         /* 👑 상단 통합 네비게이션 헤더 */
@@ -93,7 +95,7 @@
 
         #info { margin-top: 15px; font-size: 12px; color: #888; text-align: center; background: #1e1e1e; padding: 8px 20px; border-radius: 8px; }
 
-        /* 🏆 랭킹 모달 전용 스타일 추가 */
+        /* 🏆 랭킹 모달 전용 스타일 */
         .rank-modal-overlay {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: rgba(0, 0, 0, 0.75); display: flex; justify-content: center; align-items: center; z-index: 2000;
@@ -109,6 +111,23 @@
         .rank-table { width: 100%; border-collapse: collapse; text-align: center; margin-top: 10px; }
         .rank-table th { border-bottom: 2px solid #444; padding: 8px; color: #3498db; }
         .rank-table td { border-bottom: 1px solid #333; padding: 10px; }
+
+        /* 📱 모바일/터치용 컨트롤러 버튼 스타일 추가 */
+        .michelin-mobile-controls {
+            display: flex; justify-content: space-between; width: 100%; max-width: 500px;
+            margin-top: 20px; gap: 30px;
+        }
+        .touch-btn {
+            flex: 1; height: 100px; background: #222; border: 3px solid #fff;
+            border-radius: 12px; color: #fff; font-size: 36px; font-weight: bold;
+            display: flex; justify-content: center; align-items: center;
+            cursor: pointer; user-select: none; -webkit-user-select: none;
+            touch-action: manipulation; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            transition: background 0.1s, transform 0.1s;
+        }
+        .touch-btn:active, .touch-btn.pressed {
+            background: #e74c3c; border-color: #f1c40f; transform: scale(0.95);
+        }
     </style>
 </head>
 <body>
@@ -359,11 +378,17 @@
                     </div>
                 </div>
             </div>
+
+            <!-- 📱 하단 모바일/터치 조작용 왼쪽/오른쪽 터치 버튼 영역 -->
+            <div class="michelin-mobile-controls">
+                <div class="touch-btn" id="btn-touch-left">◀</div>
+                <div class="touch-btn" id="btn-touch-right">▶</div>
+            </div>
         </div>
 
         <div id="info">
             <b>테트리스 조작키:</b> 좌우 방향키 (이동) | <b>Z 키:</b> 반시계 회전 | <b>X 키 / ↑ 화살표:</b> 시계 회전 | <b>스페이스바:</b> 하드드롭<br>
-            <b>미쉐린 피하기 조작키:</b> ← / → 방향키 (좌우 이동)
+            <b>미쉐린 피하기 조작키:</b> ← / → 방향키 (좌우 이동) 또는 화면 하단 ◀ / ▶ 터치
         </div>
     </div>
 
@@ -403,7 +428,7 @@
         }
 
         /* ===================================================
-           🛞 미쉐린 타이어 피하기 게임 엔진
+           🛞 미쉐린 타이어 피하기 게임 엔진 (터치 및 마우스 연속 이동 처리)
         =================================================== */
         const mCanvas = document.getElementById('michelin-canvas');
         const mCtx = mCanvas.getContext('2d');
@@ -431,6 +456,7 @@
         let tires = [];
         const mKeys = { left: false, right: false };
 
+        // 키보드 이벤트
         window.addEventListener('keydown', (e) => {
             if (e.key === 'ArrowLeft') mKeys.left = true;
             if (e.key === 'ArrowRight') mKeys.right = true;
@@ -440,6 +466,36 @@
             if (e.key === 'ArrowLeft') mKeys.left = false;
             if (e.key === 'ArrowRight') mKeys.right = false;
         });
+
+        // 📱 터치 / 마우스 제어 등록 함수 (모바일 및 PC 버튼 겸용)
+        function setupTouchControl(btnId, directionKey) {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+
+            const startMove = (e) => {
+                e.preventDefault();
+                mKeys[directionKey] = true;
+                btn.classList.add('pressed');
+            };
+
+            const stopMove = (e) => {
+                e.preventDefault();
+                mKeys[directionKey] = false;
+                btn.classList.remove('pressed');
+            };
+
+            // 터치 및 마우스 누름/뗌 이벤트 바인딩
+            btn.addEventListener('touchstart', startMove, { passive: false });
+            btn.addEventListener('touchend', stopMove, { passive: false });
+            btn.addEventListener('touchcancel', stopMove, { passive: false });
+            btn.addEventListener('mousedown', startMove);
+            btn.addEventListener('mouseup', stopMove);
+            btn.addEventListener('mouseleave', stopMove);
+        }
+
+        // 왼쪽/오른쪽 버튼 바인딩 실행
+        setupTouchControl('btn-touch-left', 'left');
+        setupTouchControl('btn-touch-right', 'right');
 
         function startMichelinGame() {
             michelinGameActive = true;
@@ -522,7 +578,6 @@
             michelinAnimationId = requestAnimationFrame(michelinLoop);
         }
 
-        // 💡 1. 게임 종료 시 닉네임을 받아 서버로 전송하는 로직
         function gameOverMichelin() {
             michelinGameActive = false;
             document.getElementById('michelin-status-msg').innerText = `게임 오버! 최종 점수: ${michelinScore}점`;
@@ -540,7 +595,6 @@
             }, 100);
         }
 
-        // 💡 2. rank_json.json에 저장하도록 서버로 전달하는 함수
         function saveRankToJson(username, score) {
             const formData = new URLSearchParams();
             formData.append('username', username);
@@ -554,7 +608,7 @@
             .then(res => res.json())
             .then(data => {
                 alert('랭킹이 성공적으로 등록되었습니다!');
-                getGameRank(); // 등록 완료 후 모달창으로 순위 확인
+                getGameRank();
             })
             .catch(err => {
                 console.error(err);
@@ -562,7 +616,6 @@
             });
         }
 
-        // 💡 3. JSON에서 랭킹 목록을 조회하는 팝업 모달 함수
         function getGameRank() {
             if (document.getElementById('rankModalContainer')) return;
 
@@ -600,7 +653,6 @@
                 if (e.target === overlay) closeRankModal();
             });
 
-            // 백엔드 API로부터 JSON 랭킹 데이터 수신
             fetch('/michelin/getRankList', { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
@@ -638,7 +690,6 @@
                 });
         }
 
-        // 💡 4. 모달창 닫기 함수
         function closeRankModal() {
             const container = document.getElementById('rankModalContainer');
             if (container) container.remove();
