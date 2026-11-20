@@ -33,15 +33,15 @@ const SPRINT_TARGET_LINES = 40; // 목표치 40줄 고정
 
 const BLOCK_SIZE = 24;
 const SHAPES = {
-    'I': { matrix: [[0,0,0,0], [1,1,1,1], [0,0,0,0], [0,0,0,0]], color: '#00f0f0' }, 
-    'O': { matrix: [[2,2], [2,2]], color: '#f0f000' },                             
-    'T': { matrix: [[0,3,0], [3,3,3], [0,0,0]], color: '#a000f0' },                 
-    'L': { matrix: [[0,0,4], [4,4,4], [0,0,0]], color: '#f0a000' },                 
-    'J': { matrix: [[5,0,0], [5,5,5], [0,0,0]], color: '#0000f0' },                 
-    'S': { matrix: [[0,6,6], [6,6,0], [0,0,0]], color: '#00f0f0' },                 
-    'Z': { matrix: [[7,7,0], [0,7,7], [0,0,0]], color: '#f00000' }                  
+    'I': { matrix: [[0,0,0,0], [1,1,1,1], [0,0,0,0], [0,0,0,0]], color: '#3DF0FF' },
+    'O': { matrix: [[2,2], [2,2]], color: '#FFE14A' },
+    'T': { matrix: [[0,3,0], [3,3,3], [0,0,0]], color: '#D24DFF' },
+    'L': { matrix: [[0,0,4], [4,4,4], [0,0,0]], color: '#FF9A1F' },
+    'J': { matrix: [[5,0,0], [5,5,5], [0,0,0]], color: '#4D7AFF' },
+    'S': { matrix: [[0,6,6], [6,6,0], [0,0,0]], color: '#3DFF6E' },
+    'Z': { matrix: [[7,7,0], [0,7,7], [0,0,0]], color: '#FF3D5A' }
 };
-const COLORS = [null, '#00f0f0', '#f0f000', '#a000f0', '#f0a000', '#0000f0', '#00f0f0', '#f00000', '#555555'];
+const COLORS = [null, '#3DF0FF', '#FFE14A', '#D24DFF', '#FF9A1F', '#4D7AFF', '#3DFF6E', '#FF3D5A', '#8E99A8'];
 const SHAPE_TYPES = ['I', 'O', 'T', 'L', 'J', 'S', 'Z'];
 
 // ==========================================================================
@@ -564,7 +564,7 @@ function drawMatrix(matrix, offset, customColor, ctx, size = BLOCK_SIZE) {
     matrix.forEach((row, y) => {
         row.forEach((value, x) => {
             if (value !== 0) {
-                ctx.fillStyle = (value === 8) ? '#555555' : (customColor || COLORS[value]);
+                ctx.fillStyle = (value === 8) ? '#8E99A8' : (customColor || COLORS[value]);
                 ctx.fillRect((x + offset.x) * size, (y + offset.y) * size, size, size);
                 ctx.strokeStyle = '#111'; ctx.lineWidth = 2;
                 ctx.strokeRect((x + offset.x) * size, (y + offset.y) * size, size, size);
