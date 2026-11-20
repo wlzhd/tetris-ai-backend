@@ -7,7 +7,7 @@
     
     <script src="https://unpkg.com/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
 
-    <script defer src="./aaa.js?v=2"></script>
+    <script defer src="./aaa.js?v=3"></script>
     <script defer src="./ai.js?v=2"></script>
     <script defer src="./marathon.js?v=2"></script>
     <style>
@@ -24,12 +24,12 @@
         /* 👑 상단 통합 네비게이션 헤더 */
         #global-header {
             width: 100%; background: #2c3e50; border-bottom: 3px solid #34495e;
-            display: flex; justify-content: center; gap: 20px; padding: 12px 0;
+            display: flex; justify-content: center; align-items: center; gap: 12px; padding: 8px 0;
             position: sticky; top: 0; z-index: 999; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
         .header-tab {
             background: #34495e; color: #bbb; border: 2px solid #455a64;
-            padding: 10px 24px; font-size: 15px; font-weight: bold; border-radius: 8px;
+            padding: 6px 14px; font-size: 14px; font-weight: bold; border-radius: 8px;
             cursor: pointer; transition: all 0.3s ease; display: flex; align-items: center; gap: 8px;
         }
         .header-tab:hover { color: #fff; border-color: #f1c40f; background: #2c3e50; }
@@ -55,11 +55,35 @@
             transform-origin: top center;
         } 
 
-        h1 { margin: 10px 0 5px 0; font-size: 24px; color: #f1c40f; text-shadow: 0 0 10px rgba(241,196,15,0.3); }
+        h1 { margin: 0 8px 0 0; font-size: 22px; color: #f1c40f; text-shadow: 0 0 10px rgba(241,196,15,0.3); }
         .status-msg { font-size: 14px; color: #3498db; margin-bottom: 10px; font-weight: bold; height: 20px; }
         
         /* 🎛️ 메뉴 및 난이도 버튼 스타일 */
-        #btn-container, .ai-btn-group { display: flex; gap: 10px; margin-bottom: 15px; }
+        .ai-btn-group { display: flex; gap: 10px; margin-bottom: 15px; }
+        #pvp-toolbar {
+            display: flex; flex-direction: column; align-items: center; gap: 4px;
+            width: 100%; margin-bottom: 6px;
+        }
+        #pvp-toolbar .status-msg { height: auto; margin: 0; font-size: 13px; }
+        #custom-room-display { font-size: 13px; font-weight: bold; color: #f1c40f; text-align: center; }
+        #custom-room-display:empty { display: none; }
+        #btn-container {
+            display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: center;
+            gap: 6px; margin: 0; width: 100%;
+        }
+        #btn-container .menu-btn { padding: 4px 10px; font-size: 12px; }
+        #room-join-area {
+            display: flex; gap: 6px; align-items: center;
+            background: #2c3e50; padding: 3px 8px; border-radius: 8px; border: 1px solid #34495e;
+        }
+        #input-room-id {
+            background: #1a1a1a; color: #fff; border: 1px solid #555;
+            padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: bold;
+            width: 132px; text-align: center; outline: none;
+        }
+        #boards-row { display: flex; gap: 16px; align-items: stretch; justify-content: center; margin-top: 4px; }
+        #my-attack-gauge-wrap { height: 604px; }
+        #jikong-chat-panel { width: 260px; align-self: stretch; height: auto; }
         .menu-btn {
             background: #252525; color: #fff; border: 2px solid #555;
             padding: 8px 16px; font-size: 13px; font-weight: bold; border-radius: 6px;
@@ -138,33 +162,22 @@
         <div id="stage">
         <div id="view-pvp" class="game-mode-view active">
 
-            <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 70px; justify-content: center; width: 100%; margin-bottom: 10px;">
-                <div class="status-msg" id="status-msg" style="margin: 0; padding: 0; height: auto; text-align: center;">버튼을 눌러 매칭을 시작하세요!</div>
-                
-                <div id="custom-room-display" style="font-size: 15px; font-weight: bold; color: #f1c40f; text-align: center; min-height: 20px;"></div>
-            </div>
-            
-            <div id="btn-container" style="display: flex; flex-direction: column; align-items: center; gap: 15px; margin: 10px 0; width: 100%; min-height: 90px; justify-content: center;">
-
-                <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; width: 100%; max-width: 600px;">
-                    <button class="menu-btn" id="btn-create-room" onclick="createCustomRoom()" style="background: #9b59b6; border-color: #8e44ad; color: white; white-space: nowrap;">방 만들기 🏠</button>
-                    <button class="menu-btn" id="btn-start" style="background: #3498db; border-color: #2980b9; color: white; white-space: nowrap;">빠른 매칭 ⚡</button>
-                    <button class="menu-btn" id="btn-solo" style="white-space: nowrap;">혼자하기 (연습)</button>
+            <div id="pvp-toolbar">
+                <div class="status-msg" id="status-msg">버튼을 눌러 매칭을 시작하세요!</div>
+                <div id="custom-room-display"></div>
+                <div id="btn-container">
+                    <button class="menu-btn" id="btn-create-room" onclick="createCustomRoom()" style="background: #9b59b6; border-color: #8e44ad; color: white; white-space: nowrap;">방 만들기</button>
+                    <button class="menu-btn" id="btn-start" style="background: #3498db; border-color: #2980b9; color: white; white-space: nowrap;">빠른 매칭</button>
+                    <button class="menu-btn" id="btn-solo" style="white-space: nowrap;">혼자하기</button>
                     <button class="menu-btn" id="btn-restart" style="white-space: nowrap;">다시시작</button>
+                    <div id="room-join-area">
+                        <input type="text" id="input-room-id" placeholder="방 코드" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+                        <button class="menu-btn" onclick="joinCustomRoom()" style="margin: 0; background: #2ecc71; border-color: #27ae60; color: white; white-space: nowrap;">참가</button>
+                    </div>
                 </div>
-
-                <div id="room-join-area" style="display: flex; gap: 10px; align-items: center; background: #2c3e50; padding: 10px 20px; border-radius: 8px; border: 1px solid #34495e; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
-                    <input type="text" 
-                    id="input-room-id" 
-                    placeholder="방 코드 입력 (예: 1234)" 
-                    oninput="this.value = this.value.replace(/[^0-9]/g, '')"
-                    style="background: #1a1a1a; color: #fff; border: 1px solid #555; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; width: 160px; text-align: center; outline: none;">
-                    <button class="menu-btn" onclick="joinCustomRoom()" style="margin: 0; background: #2ecc71; border-color: #27ae60; color: white; white-space: nowrap;">참가하기 ⚔️</button>
-                </div>
-
             </div>
             
-            <div style="display: flex; gap: 30px; align-items: flex-start; justify-content: center; width: 100%; max-width: 1240px; margin-top: 10px;">
+            <div id="boards-row">
                 
                 <div id="game-layout" style="display: flex; gap: 25px; align-items: flex-start;">
                     
@@ -175,8 +188,8 @@
                                 <div class="side-box"><h2>HOLD</h2><canvas id="my-hold" class="minicanvas" width="80" height="80"></canvas></div>
                                 <div class="side-box"><h2>ATTACK</h2><div id="my-attack-count" class="score-val" style="color: #e74c3c;">0</div></div>
                             </div>
-                            <div class="attack-gauge-container"><div id="my-attack-gauge" class="attack-gauge-fill"></div></div>
-                            <canvas id="my-tetris" class="game-board" width="240" height="480"></canvas>
+                            <div class="attack-gauge-container" id="my-attack-gauge-wrap"><div id="my-attack-gauge" class="attack-gauge-fill"></div></div>
+                            <canvas id="my-tetris" class="game-board" width="300" height="600"></canvas>
                             <div class="side-panel">
                                 <div class="side-box"><h2>NEXT</h2><canvas id="my-next" class="minicanvas" width="80" height="240"></canvas></div>
                                 <div class="side-box" style="width: 100px; padding: 8px;">
@@ -205,7 +218,7 @@
 
                 </div>
 
-                <div id="jikong-chat-panel" style="width: 320px; height: 534px; background: #1e1e1e; border: 2px solid #333; border-radius: 12px; padding: 15px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 15px rgba(0,0,0,0.4); box-sizing: border-box;">
+                <div id="jikong-chat-panel" style="background: #1e1e1e; border: 2px solid #333; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 4px 15px rgba(0,0,0,0.4); box-sizing: border-box;">
                     <div style="font-size: 14px; font-weight: bold; color: #f1c40f; border-bottom: 1px solid #333; padding-bottom: 8px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">💬 ROOM CHAT</div>
                     
                     <div id="chat-log-box" style="flex-grow: 1; width: 100%; background: #0b0b0b; border-radius: 6px; border: 1px solid #252525; padding: 10px; overflow-y: auto; font-size: 13px; color: #eee; font-family: 'Malgun Gothic', sans-serif; display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; margin-bottom: 10px;">

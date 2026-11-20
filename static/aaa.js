@@ -552,11 +552,16 @@ socket.on('match_start', (data) => {
     myPlayerReset();
 });
 
+function boardCellSize(canvas) {
+    return canvas.width / 10;
+}
+
 function drawGrid(ctx, canvas) {
+    const size = boardCellSize(canvas);
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.strokeStyle = '#222'; ctx.lineWidth = 1;
-    for (let i = 0; i <= canvas.width; i += BLOCK_SIZE) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
-    for (let j = 0; j <= canvas.height; j += BLOCK_SIZE) { ctx.beginPath(); ctx.moveTo(0, j); ctx.lineTo(canvas.width, j); ctx.stroke(); }
+    for (let i = 0; i <= canvas.width; i += size) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
+    for (let j = 0; j <= canvas.height; j += size) { ctx.beginPath(); ctx.moveTo(0, j); ctx.lineTo(canvas.width, j); ctx.stroke(); }
 }   
 
 function drawMatrix(matrix, offset, customColor, ctx, size = BLOCK_SIZE) {
@@ -575,15 +580,16 @@ function drawMatrix(matrix, offset, customColor, ctx, size = BLOCK_SIZE) {
 
 function drawMyGhost() {
     if (!myGame.player.matrix) return;
+    const size = boardCellSize(myGame.canvas);
     let ghostPos = { x: myGame.player.pos.x, y: myGame.player.pos.y };
     while (!collide(myGame.board, {pos: {x: ghostPos.x, y: ghostPos.y + 1}, matrix: myGame.player.matrix})) { ghostPos.y++; }
     myGame.player.matrix.forEach((row, y) => {
         row.forEach((value, x) => {
             if (value !== 0) {
                 myGame.ctx.globalAlpha = 0.15; myGame.ctx.fillStyle = myGame.player.color; 
-                myGame.ctx.fillRect((x + ghostPos.x) * BLOCK_SIZE, (y + ghostPos.y) * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                myGame.ctx.fillRect((x + ghostPos.x) * size, (y + ghostPos.y) * size, size, size);
                 myGame.ctx.globalAlpha = 0.3; myGame.ctx.strokeStyle = '#fff'; 
-                myGame.ctx.strokeRect((x + ghostPos.x) * BLOCK_SIZE, (y + ghostPos.y) * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                myGame.ctx.strokeRect((x + ghostPos.x) * size, (y + ghostPos.y) * size, size, size);
                 myGame.ctx.globalAlpha = 1.0;
             }
         });
@@ -863,10 +869,12 @@ function mainLoop(time = 0) {
         }
     }
     
-    drawGrid(myGame.ctx, myGame.canvas); drawMatrix(myGame.board, {x:0, y:0}, null, myGame.ctx); drawMyGhost();
-    if (myGame.player) { drawMatrix(myGame.player.matrix, myGame.player.pos, myGame.player.color, myGame.ctx); }
-    drawGrid(oppGame.ctx, oppGame.canvas); drawMatrix(oppGame.board, {x:0, y:0}, null, oppGame.ctx);
-    if (oppGame.player && oppGame.player.matrix) { drawMatrix(oppGame.player.matrix, oppGame.player.pos, oppGame.player.color, oppGame.ctx);}
+    const mySize = boardCellSize(myGame.canvas);
+    const oppSize = boardCellSize(oppGame.canvas);
+    drawGrid(myGame.ctx, myGame.canvas); drawMatrix(myGame.board, {x:0, y:0}, null, myGame.ctx, mySize); drawMyGhost();
+    if (myGame.player) { drawMatrix(myGame.player.matrix, myGame.player.pos, myGame.player.color, myGame.ctx, mySize); }
+    drawGrid(oppGame.ctx, oppGame.canvas); drawMatrix(oppGame.board, {x:0, y:0}, null, oppGame.ctx, oppSize);
+    if (oppGame.player && oppGame.player.matrix) { drawMatrix(oppGame.player.matrix, oppGame.player.pos, oppGame.player.color, oppGame.ctx, oppSize);}
 
     requestAnimationFrame(mainLoop);
 }
@@ -1064,7 +1072,7 @@ socket.on('opponent_left', function() {
     if (oppGame.gaugeElement) updateAttackGauge(oppGame.gaugeElement, 0);
 
     drawGrid(oppGame.ctx, oppGame.canvas);
-    drawMatrix(oppGame.board, {x:0, y:0}, null, oppGame.ctx);
+    drawMatrix(oppGame.board, {x:0, y:0}, null, oppGame.ctx, boardCellSize(oppGame.canvas));
 
     if (oppGame.holdCtx && oppGame.holdCanvas) {
         oppGame.holdCtx.fillStyle = '#000';
